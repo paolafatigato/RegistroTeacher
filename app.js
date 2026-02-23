@@ -13,18 +13,22 @@ const FIREBASE_CONFIG = {
 };
 
 // =====================================================================
-//  STRUTTURA DEL DATABASE (da immagine Firebase Console):
+//  STRUTTURA DEL DATABASE classroomanager:
 //  /users/{uid}/classes/[array]
-//    - id: "1769021271490"
-//    - name: "1A"
-//    - students: { ... }
+//    - id: "1769021271490"         ← ID della classe
+//    - name: "1A"                  ← nome della classe
+//    - students: [                 ← array di studenti (NO campo id!)
+//        { fullName: "Rossi Mario", displayName: "Mario R." },
+//        ...
+//      ]
 //    - seatingByClassroom: { ... }
 //
-//  Campo nome classe:  "name"
-//  Campo studenti:     "students" (sub-oggetto/array dentro la classe)
-//  Campo nome studente: da configurare sotto
+//  IMPORTANTE: gli studenti non hanno un campo "id" proprio.
+//  Usiamo "fullName" (es. "Rossi Mario") come identificatore stabile.
 // =====================================================================
-const FB_STUDENT_NAME_FIELD = "name"; // ← cambia se il campo nome studente è diverso
+// Non modificare questo campo — è quello usato da classroomanager
+const FB_STUDENT_FULLNAME_FIELD = "fullName";    // identificatore stabile
+const FB_STUDENT_DISPLAY_FIELD  = "displayName"; // nome visualizzato (es. "Mario R.")
 
 // =====================================================================
 //  Firebase globals
@@ -1662,28 +1666,7 @@ function buildStudentFacilitatedMap() {
   return map;
 }
 
-/**
- * Scrive classi e studenti su Firebase.
- * Salva solo name e students[].name, NON i voti (che restano locali).
- */
-function saveClassesToFirebase() {
-  if (!fbDb || !fbUser) return;
-  const classesData = {};
-  state.classes.forEach((cls) => {
-    const studentsData = {};
-    cls.students.forEach((student) => {
-      // Salva solo il nome (non i voti): non vogliamo inquinare classroomanager
-      studentsData[student.id] = { name: student.name };
-    });
-    classesData[cls.id] = {
-      [FB_CLASS_NAME_FIELD]: cls.name,
-      students: studentsData,
-    };
-  });
-  fbDb.ref(FB_CLASSES_PATH).set(classesData).catch((err) => {
-    console.warn("Errore salvataggio classi su Firebase:", err);
-  });
-}
+
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -2088,27 +2071,26 @@ function applyFirebaseGrading(data) {
  *
  * Firebase restituisce gli array come oggetti { "0": {...}, "1": {...} }
  * Ogni classe ha: { id, name, students: { key: { name, ... } } }
- * Ogni studente ha almeno il campo "name" (configurabile con FB_STUDENT_NAME_FIELD)
+ * Ogni studente ha i campi "fullName" (usato come ID stabile) e "displayName" (visualizzato)
  */
 function mergeFirebaseClasses(fbData) {
-  // Usa i dati di grading già arrivati da Firebase (se disponibili),
-  // altrimenti usa la cache locale
+  // Usa i dati di grading da Firebase o dalla cache locale
   const studentScores = state._studentScores || buildStudentScoresMap();
   const studentTestVersions = state._studentTestVersions || buildStudentTestVersionsMap();
   const studentFacilitated = state._studentFacilitated || buildStudentFacilitatedMap();
 
-  // Firebase array → array JS
-  const rawClasses = Array.isArray(fbData)
-    ? fbData
-    : Object.values(fbData);
+  // Firebase converte gli array JS in oggetti { "0": {...}, "1": {...} }
+  const rawClasses = Array.isArray(fbData) ? fbData : Object.values(fbData);
 
   const newClasses = rawClasses
     .filter(Boolean)
     .map((classData) => {
+      // L'id della CLASSE è numerico (timestamp), usalo come stringa
       const classId = String(classData.id || createId("class"));
       const className = classData.name || classId;
 
-      // Studenti: oggetto keyed o array
+      // Gli studenti in classroomanager sono un array di { fullName, displayName }
+      // senza campo "id" — Firebase li converte in oggetto con chiavi "0","1","2"...
       const studentsRaw = classData.students || {};
       const studentsArray = Array.isArray(studentsRaw)
         ? studentsRaw
@@ -2117,44 +2099,29 @@ function mergeFirebaseClasses(fbData) {
       const students = studentsArray
         .filter(Boolean)
         .map((studentData) => {
-          const studentId = String(studentData.id || studentData.uid || createId("stu"));
-          // Prova i campi più comuni per il nome
-          const studentName =
-            studentData[FB_STUDENT_NAME_FIELD] ||
-            studentData.displayName ||
-            (studentData.firstName
-              ? `${studentData.firstName} ${studentData.lastName || ""}`.trim()
-              : null) ||
-            studentId;
+          // ⚠️ Gli studenti NON hanno un campo "id" in classroomanager.
+          // Usiamo fullName (es. "Rossi Mario") come ID stabile — non cambia mai.
+          const studentId = studentData[FB_STUDENT_FULLNAME_FIELD]
+            || studentData.fullName
+            || studentData.name
+            || String(Math.random()); // ultimo fallback (non dovrebbe mai capitare)
+
+          // Nome visualizzato nella tabella voti
+          const studentName = studentData[FB_STUDENT_DISPLAY_FIELD]
+            || studentData.displayName
+            || studentId;
 
           return {
-            id: studentId,
-            name: studentName,
+            id: studentId,           // "Rossi Mario" — stabile tra sessioni
+            name: studentName,       // "Mario R."    — visualizzato
             scores: studentScores[studentId] || {},
             testVersions: studentTestVersions[studentId] || {},
             facilitated: studentFacilitated[studentId] === true,
           };
         });
 
-      students.sort((a, b) => {
-        // Ordina per cognome se presente, altrimenti per nome
-        const getSurname = (student) => {
-          // Cerca lastName o cognome
-          if (student.lastName) return student.lastName;
-          if (student.name && student.name.split(" ").length > 1) {
-            // Prendi l'ultima parola come cognome se il nome è "Nome Cognome"
-            return student.name.split(" ").slice(-1)[0];
-          }
-          return student.name || "";
-        };
-        const surnameA = getSurname(a).toLowerCase();
-        const surnameB = getSurname(b).toLowerCase();
-        if (surnameA !== surnameB) {
-          return surnameA.localeCompare(surnameB, "it");
-        }
-        // Se i cognomi sono uguali, ordina per nome completo
-        return a.name.localeCompare(b.name, "it");
-      });
+      // Ordina per cognome (il fullName inizia con il cognome)
+      students.sort((a, b) => a.id.localeCompare(b.id, "it"));
 
       return { id: classId, name: className, students };
     });
