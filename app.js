@@ -769,6 +769,8 @@ function renderSections(version) {
     return;
   }
 
+  let draggedSection = null;
+
   version.sections.forEach((section) => {
     const card = sectionTemplate.content.firstElementChild.cloneNode(true);
     const nameInput = card.querySelector(".section-name");
@@ -783,6 +785,54 @@ function renderSections(version) {
       renderTestTable();
     });
 
+    // Drag and drop events
+    card.addEventListener("dragstart", (event) => {
+      draggedSection = section;
+      card.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+    });
+
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      // Remove drag-over styling from all cards
+      document.querySelectorAll(".section-card").forEach((c) => {
+        c.classList.remove("drag-over");
+      });
+      draggedSection = null;
+    });
+
+    card.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (draggedSection && draggedSection.id !== section.id) {
+        card.classList.add("drag-over");
+      }
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over");
+    });
+
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      card.classList.remove("drag-over");
+      if (draggedSection && draggedSection.id !== section.id) {
+        // Find indices
+        const draggedIndex = version.sections.findIndex((s) => s.id === draggedSection.id);
+        const targetIndex = version.sections.findIndex((s) => s.id === section.id);
+        
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+          // Swap sections
+          const temp = version.sections[draggedIndex];
+          version.sections[draggedIndex] = version.sections[targetIndex];
+          version.sections[targetIndex] = temp;
+          
+          saveState();
+          renderConfig();
+          renderTestTable();
+        }
+      }
+    });
 
     card.querySelector(".remove-section").addEventListener("click", () => {
       version.sections = version.sections.filter((item) => item.id !== section.id);
@@ -963,6 +1013,21 @@ function renderTestTable() {
       renderTestTable();
     });
     headerWrap.appendChild(addColumnBtn);
+
+    const removeColumnBtn = document.createElement("button");
+    removeColumnBtn.type = "button";
+    removeColumnBtn.classList.add("btn", "btn-danger", "btn-small");
+    removeColumnBtn.textContent = "×";
+    removeColumnBtn.title = "Elimina questa section e tutti i voti associati";
+    removeColumnBtn.addEventListener("click", () => {
+      if (confirm(`Sei sicuro di voler eliminare la section "${section.name}"? Tutti i voti andranno persi.`)) {
+        activeVersion.sections = activeVersion.sections.filter((item) => item.id !== section.id);
+        removeSectionScores(section.id, selectedTest?.id);
+        saveState();
+        renderTestTable();
+      }
+    });
+    headerWrap.appendChild(removeColumnBtn);
 
     th.appendChild(headerWrap);
     headerRow.appendChild(th);
@@ -1816,8 +1881,16 @@ function getStudentAverage(student) {
     return 0;
   }
   // Filtra i voti: esclude null, undefined e voti <= 2 (non svolti)
+  // Se lo studente è facilitato, usa la versione facilitata di ogni test
   const scores = state.tests
-    .map((test) => getFinalScore(student, test))
+    .map((test) => {
+      if (student.facilitated === true) {
+        const facilitatedVersion = getVersionById(test, getFacilitatedVersionId(test));
+        return getFinalScore(student, test, facilitatedVersion);
+      } else {
+        return getFinalScore(student, test);
+      }
+    })
     .filter((value) => value !== null && value !== undefined && value > 2);
 
   if (scores.length === 0) {

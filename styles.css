@@ -595,3 +595,69 @@ body {
   border-color: #d0d0d0;
   outline: none;
 }
+
+/* Drag and drop styles for sections */
+.section-card {
+  cursor: grab;
+  transition: opacity 0.2s, background-color 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+
+.section-card:active {
+  cursor: grabbing;
+}
+
+.section-card.dragging {
+  opacity: 0.5;
+  background-color: #f5f5f5;
+}
+
+.section-card.drag-over {
+  background-color: #e8f4f8;
+  box-shadow: 0 0 0 2px var(--glaucous);
+  border-radius: 8px;
+}
+
+.section-drag-handle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  cursor: grab;
+  color: #999;
+  font-size: 16px;
+  font-weight: bold;
+  user-select: none;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.section-card:hover .section-drag-handle {
+  opacity: 1;
+  color: #666;
+}
+
+.section-card.dragging .section-drag-handle {
+  cursor: grabbing;
+}
+
+.section-card .remove-section {
+  position: absolute;
+  top: 12px;
+  right: 50px;
+  padding: 4px 8px;
+  font-size: 18px;
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.section-card:hover .remove-section {
+  opacity: 1;
+}
+
+.section-card .remove-section:hover {
+  transform: scale(1.1);
+}
+
+.section-card .remove-section:active {
+  transform: scale(0.95);
+}
