@@ -878,6 +878,7 @@ function renderTestTable() {
   }
 
   ensureTestVersions(selectedTest);
+  saveState(); // Salva se versioni sono state aggiunte
   ensureVersionSelections();
 
   testVersionSelect.innerHTML = "";
@@ -896,6 +897,12 @@ function renderTestTable() {
     getVersionById(selectedTest, state.selectedTestVersionId) ??
     defaultVersion;
   const facilitatedVersionId = getFacilitatedVersionId(selectedTest);
+
+  // Applica la classe CSS per la versione facilitata
+  gradeTable.classList.remove("facilitata-version");
+  if (state.selectedTestVersionId === facilitatedVersionId) {
+    gradeTable.classList.add("facilitata-version");
+  }
 
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
@@ -1097,6 +1104,21 @@ function renderTestTable() {
       saveState();
     });
     studentCell.appendChild(studentInput);
+    
+    // Aggiungi click handler per cambiare versione
+    studentCell.style.cursor = "pointer";
+    studentCell.addEventListener("click", (event) => {
+      if (event.target !== studentInput) {
+        if (isFacilitated) {
+          state.selectedTestVersionId = facilitatedVersionId;
+        } else {
+          state.selectedTestVersionId = activeVersion?.id;
+        }
+        saveState();
+        renderTestTable();
+      }
+    });
+    
     row.appendChild(studentCell);
 
     const versionCell = document.createElement("td");
@@ -1112,6 +1134,23 @@ function renderTestTable() {
       renderTestTable();
     });
     versionCell.appendChild(versionToggle);
+    
+    // Aggiungi click handler per cambiare versione (ignora click sulla checkbox)
+    versionCell.style.cursor = "pointer";
+    versionCell.addEventListener("click", (event) => {
+      // Ignora click diretti sulla checkbox stessa
+      if (event.target === versionToggle) {
+        return;
+      }
+      if (isFacilitated) {
+        state.selectedTestVersionId = facilitatedVersionId;
+      } else {
+        state.selectedTestVersionId = activeVersion?.id;
+      }
+      saveState();
+      renderTestTable();
+    });
+    
     row.appendChild(versionCell);
 
     sections.forEach((section, sectionIndex) => {
@@ -1125,28 +1164,66 @@ function renderTestTable() {
           if (isLastSubsection) {
             cell.classList.add("section-divider");
           }
+          // Logica di disabilitazione: Standard disabilita chi ha spunta, Facilitata disabilita chi NON l'ha
+          const shouldDisable = (state.selectedTestVersionId === facilitatedVersionId) ? 
+            (student.facilitated !== true) : 
+            (student.facilitated === true);
           const input = createScoreInput(
             student,
             selectedTest.id,
             section.id,
             subsection.id,
             "subsection",
-            false
+            shouldDisable
           );
           cell.appendChild(input);
+          
+          // Aggiungi click handler per cambiare versione
+          cell.style.cursor = "pointer";
+          cell.addEventListener("click", (event) => {
+            if (event.target !== input) {
+              if (isFacilitated) {
+                state.selectedTestVersionId = facilitatedVersionId;
+              } else {
+                state.selectedTestVersionId = activeVersion?.id;
+              }
+              saveState();
+              renderTestTable();
+            }
+          });
+          
           row.appendChild(cell);
         });
       } else {
         const cell = document.createElement("td");
+        // Logica di disabilitazione: Standard disabilita chi ha spunta, Facilitata disabilita chi NON l'ha
+        const shouldDisable = (state.selectedTestVersionId === facilitatedVersionId) ? 
+          (student.facilitated !== true) : 
+          (student.facilitated === true);
         const input = createScoreInput(
           student,
           selectedTest.id,
           section.id,
           null,
           "section",
-          false
+          shouldDisable
         );
         cell.appendChild(input);
+        
+        // Aggiungi click handler per cambiare versione
+        cell.style.cursor = "pointer";
+        cell.addEventListener("click", (event) => {
+          if (event.target !== input) {
+            if (isFacilitated) {
+              state.selectedTestVersionId = facilitatedVersionId;
+            } else {
+              state.selectedTestVersionId = activeVersion?.id;
+            }
+            saveState();
+            renderTestTable();
+          }
+        });
+        
         row.appendChild(cell);
       }
 
@@ -1455,16 +1532,49 @@ function ensureTestVersions(test) {
   if (!test) {
     return;
   }
-  if (!Array.isArray(test.versions) || test.versions.length === 0) {
+  
+  // Inizializza versions se non esiste
+  if (!Array.isArray(test.versions)) {
+    test.versions = [];
+  }
+  
+  // Se non ha versioni, creane due (Standard e Facilitata)
+  if (test.versions.length === 0) {
     const baseSections = Array.isArray(test.sections) ? test.sections : [];
+    const standardVersionId = createId("ver");
+    const facilitatedVersionId = createId("ver");
+    
     test.versions = [
       {
-        id: createId("ver"),
+        id: standardVersionId,
         name: "Standard",
-        sections: baseSections,
+        sections: JSON.parse(JSON.stringify(baseSections)), // Deep copy
+      },
+      {
+        id: facilitatedVersionId,
+        name: "Facilitata",
+        sections: JSON.parse(JSON.stringify(baseSections)), // Deep copy indipendente
       },
     ];
+    
+    test.facilitatedVersionId = facilitatedVersionId;
   }
+  // Se ha solo 1 versione, aggiungi la Facilitata
+  else if (test.versions.length === 1) {
+    const baseSections = Array.isArray(test.sections) ? test.sections : 
+                        (test.versions[0]?.sections ? test.versions[0].sections : []);
+    const facilitatedVersionId = createId("ver");
+    
+    test.versions.push({
+      id: facilitatedVersionId,
+      name: "Facilitata",
+      sections: JSON.parse(JSON.stringify(baseSections)), // Deep copy indipendente
+    });
+    
+    test.facilitatedVersionId = facilitatedVersionId;
+  }
+  
+  // Assicura che tutte le versioni abbiano proprietà valide
   test.versions.forEach((version) => {
     if (!version.id) {
       version.id = createId("ver");
@@ -1476,9 +1586,10 @@ function ensureTestVersions(test) {
       version.sections = [];
     }
   });
+  
+  // Se non c'è una versione facilitata assegnata, usane una
   if (!test.facilitatedVersionId) {
-    test.facilitatedVersionId =
-      test.versions[1]?.id ?? test.versions[0]?.id ?? null;
+    test.facilitatedVersionId = test.versions[1]?.id ?? test.versions[0]?.id ?? null;
   }
 }
 
@@ -1652,17 +1763,24 @@ function createStudent() {
 }
 
 function createTest(title, subject) {
+  const standardVersionId = createId("ver");
+  const facilitatedVersionId = createId("ver");
   const baseVersion = {
-    id: createId("ver"),
+    id: standardVersionId,
     name: "Standard",
+    sections: [],
+  };
+  const facilitatedVersion = {
+    id: facilitatedVersionId,
+    name: "Facilitata",
     sections: [],
   };
   return {
     id: createId("test"),
     title: title || "Nuova verifica",
     subject: subject || "",
-    versions: [baseVersion],
-    facilitatedVersionId: baseVersion.id,
+    versions: [baseVersion, facilitatedVersion],
+    facilitatedVersionId: facilitatedVersionId,
   };
 }
 
@@ -1826,6 +1944,9 @@ function loadState() {
       ...test,
       subject: typeof test.subject === 'string' ? test.subject : ""
     }));
+    
+    // Assicura che ogni test abbia due versioni (Standard e Facilitata)
+    tests.forEach(test => ensureTestVersions(test));
 
     const selectedClassId = parsed.selectedClassId ?? classes[0]?.id ?? null;
     const selectedTestId = parsed.selectedTestId ?? tests[0]?.id ?? null;
