@@ -256,6 +256,11 @@ body {
   text-align: center;
 }
 
+.grade-table th.section-divider,
+.grade-table td.section-divider {
+  border-right: 2px solid var(--pastel-pink);
+}
+
 .grade-table th input {
   width: 100%;
   border: 1px solid #d0d0d0;

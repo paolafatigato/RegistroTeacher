@@ -957,9 +957,13 @@ function renderTestTable() {
     th.appendChild(headerWrap);
     headerRow.appendChild(th);
 
-    section.subsections.forEach((subsection) => {
+    section.subsections.forEach((subsection, subsectionIndex) => {
       const subTh = document.createElement("th");
       subTh.classList.add("subheader");
+      const isLastSubsection = subsectionIndex === section.subsections.length - 1;
+      if (isLastSubsection) {
+        subTh.classList.add("section-divider");
+      }
       const subHeaderWrap = document.createElement("div");
       subHeaderWrap.classList.add("subheader-cell");
       const subNameInput = document.createElement("input");
@@ -991,6 +995,9 @@ function renderTestTable() {
 
       const weightTh = document.createElement("th");
       weightTh.classList.add("subheader");
+      if (isLastSubsection) {
+        weightTh.classList.add("section-divider");
+      }
       const weightInput = document.createElement("input");
       weightInput.type = "number";
       weightInput.step = "0.1";
@@ -1006,6 +1013,9 @@ function renderTestTable() {
 
       const maxTh = document.createElement("th");
       maxTh.classList.add("subheader");
+      if (isLastSubsection) {
+        maxTh.classList.add("section-divider");
+      }
       const maxInput = document.createElement("input");
       maxInput.type = "number";
       maxInput.step = "0.1";
@@ -1104,13 +1114,17 @@ function renderTestTable() {
     versionCell.appendChild(versionToggle);
     row.appendChild(versionCell);
 
-    sections.forEach((section) => {
+    sections.forEach((section, sectionIndex) => {
       const sectionScore = getSectionScore(student, selectedTest, section);
       const hasSubsections = section.subsections.length > 0;
 
       if (hasSubsections) {
-        section.subsections.forEach((subsection) => {
+        section.subsections.forEach((subsection, subsectionIndex) => {
           const cell = document.createElement("td");
+          const isLastSubsection = subsectionIndex === section.subsections.length - 1;
+          if (isLastSubsection) {
+            cell.classList.add("section-divider");
+          }
           const input = createScoreInput(
             student,
             selectedTest.id,
