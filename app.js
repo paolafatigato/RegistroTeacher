@@ -566,7 +566,10 @@ function renderClassDetail() {
   studentHeader.textContent = "Studente";
   headerRow.appendChild(studentHeader);
 
-  state.tests.forEach((test) => {
+  // Filtra i test: mostra solo quelli che hanno almeno un voto nella classe
+  const visibleTests = state.tests.filter((test) => testHasGradesInClass(test, selectedClass));
+  
+  visibleTests.forEach((test) => {
     const th = document.createElement("th");
     th.innerHTML = `<div>${test.title || "Verifica"}</div>`;
     if (test.subject && test.subject.trim() !== "") {
@@ -608,7 +611,7 @@ function renderClassDetail() {
     studentCell.appendChild(nameInput);
     row.appendChild(studentCell);
 
-    state.tests.forEach((test) => {
+    visibleTests.forEach((test) => {
       const score = getFinalScore(student, test);
       const cell = document.createElement("td");
       const btn = document.createElement("button");
@@ -1473,6 +1476,18 @@ function getFinalScore(student, test, version) {
   return (weightedSum * 10) / weightedMaxSum;
 }
 
+// Verifica se un test ha almeno un voto in una classe
+function testHasGradesInClass(test, selectedClass) {
+  if (!test || !selectedClass) {
+    return false;
+  }
+  // Controlla se almeno uno studente della classe ha un voto per questo test
+  return selectedClass.students.some((student) => {
+    const finalScore = getFinalScore(student, test);
+    return finalScore !== null && finalScore > 0;
+  });
+}
+
 function removeSectionScores(sectionId, testId) {
   if (!testId) {
     return;
@@ -1800,9 +1815,10 @@ function getStudentAverage(student) {
   if (!state.tests.length) {
     return 0;
   }
+  // Filtra i voti: esclude null, undefined e voti <= 2 (non svolti)
   const scores = state.tests
     .map((test) => getFinalScore(student, test))
-    .filter((value) => value !== null && value !== undefined);
+    .filter((value) => value !== null && value !== undefined && value > 2);
 
   if (scores.length === 0) {
     return 0;
