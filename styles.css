@@ -103,6 +103,11 @@ body {
   margin-bottom: 16px;
 }
 
+  .btn-classroom {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+  }
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

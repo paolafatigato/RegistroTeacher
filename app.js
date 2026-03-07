@@ -41,6 +41,8 @@ let fbClassesUnsubscribe = null;  // listener classi (read-only da classroomanag
 let fbGradingUnsubscribe = null;  // listener voti/test (read-write, nostro)
 let fbSaveTimer = null;           // debounce per non scrivere su Firebase a ogni tasto
 let fbIgnoreGrading = false;      // evita loop write→listen→write
+let tableRenderTimer = null;      // debounce per non ricaricare la tabella durante navigazione frecce
+let isNavigatingWithArrows = false; // flag per evitare renderTestTable durante navigazione frecce
 
 // =====================================================================
 //  STORAGE KEY (invariato)
@@ -1194,7 +1196,8 @@ function createScoreInput(
     input.value = student.scores[testId][sectionId].direct ?? "";
   }
 
-  input.addEventListener("change", (event) => {
+  input.addEventListener("blur", (event) => {
+    // Salva il valore quando l'input perde il focus (senza ricaricare la tabella)
     const value = parseNumber(event.target.value);
     if (type === "subsection") {
       student.scores[testId][sectionId].subsections[subsectionId] = value;
@@ -1202,7 +1205,119 @@ function createScoreInput(
       student.scores[testId][sectionId].direct = value;
     }
     saveState();
-    renderTestTable();
+  });
+
+  input.addEventListener("change", (event) => {
+    // Se NON siamo in navigazione frecce, renderizza la tabella con debounce
+    if (!isNavigatingWithArrows) {
+      clearTimeout(tableRenderTimer);
+      tableRenderTimer = setTimeout(() => {
+        renderTestTable();
+      }, 300);
+    }
+  });
+
+  // Navigazione tra celle con frecce della tastiera
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      // Salva il valore PRIMA di navigare
+      const value = parseNumber(input.value);
+      if (type === "subsection") {
+        student.scores[testId][sectionId].subsections[subsectionId] = value;
+      } else {
+        student.scores[testId][sectionId].direct = value;
+      }
+      saveState();
+      
+      isNavigatingWithArrows = true;
+      const cell = input.parentElement;
+      const nextCell = cell.nextElementSibling;
+      if (nextCell) {
+        const nextInput = nextCell.querySelector("input");
+        if (nextInput && !nextInput.disabled) {
+          nextInput.focus();
+          nextInput.select();
+        }
+      }
+      isNavigatingWithArrows = false;
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      // Salva il valore PRIMA di navigare
+      const value = parseNumber(input.value);
+      if (type === "subsection") {
+        student.scores[testId][sectionId].subsections[subsectionId] = value;
+      } else {
+        student.scores[testId][sectionId].direct = value;
+      }
+      saveState();
+      
+      isNavigatingWithArrows = true;
+      const cell = input.parentElement;
+      const prevCell = cell.previousElementSibling;
+      if (prevCell) {
+        const prevInput = prevCell.querySelector("input");
+        if (prevInput && !prevInput.disabled) {
+          prevInput.focus();
+          prevInput.select();
+        }
+      }
+      isNavigatingWithArrows = false;
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      // Salva il valore PRIMA di navigare
+      const value = parseNumber(input.value);
+      if (type === "subsection") {
+        student.scores[testId][sectionId].subsections[subsectionId] = value;
+      } else {
+        student.scores[testId][sectionId].direct = value;
+      }
+      saveState();
+      
+      isNavigatingWithArrows = true;
+      const cell = input.parentElement;
+      const row = cell.parentElement;
+      const cellIndex = Array.from(row.children).indexOf(cell);
+      const nextRow = row.nextElementSibling;
+      if (nextRow) {
+        const nextCell = nextRow.children[cellIndex];
+        if (nextCell) {
+          const nextInput = nextCell.querySelector("input");
+          if (nextInput && !nextInput.disabled) {
+            nextInput.focus();
+            nextInput.select();
+          }
+        }
+      }
+      isNavigatingWithArrows = false;
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      // Salva il valore PRIMA di navigare
+      const value = parseNumber(input.value);
+      if (type === "subsection") {
+        student.scores[testId][sectionId].subsections[subsectionId] = value;
+      } else {
+        student.scores[testId][sectionId].direct = value;
+      }
+      saveState();
+      
+      isNavigatingWithArrows = true;
+      const cell = input.parentElement;
+      const row = cell.parentElement;
+      const cellIndex = Array.from(row.children).indexOf(cell);
+      const prevRow = row.previousElementSibling;
+      if (prevRow) {
+        const prevCell = prevRow.children[cellIndex];
+        if (prevCell) {
+          const prevInput = prevCell.querySelector("input");
+          if (prevInput && !prevInput.disabled) {
+            prevInput.focus();
+            prevInput.select();
+          }
+        }
+      }
+      isNavigatingWithArrows = false;
+    }
   });
 
   return input;
