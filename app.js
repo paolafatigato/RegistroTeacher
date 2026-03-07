@@ -615,9 +615,6 @@ function renderClassDetail() {
       btn.classList.add("grade-link");
       btn.dataset.testId = test.id;
       btn.textContent = formatScore(score);
-      if (isLowGrade(score)) {
-        btn.classList.add("low-grade");
-      }
       cell.appendChild(btn);
       row.appendChild(cell);
     });
@@ -1122,9 +1119,6 @@ function renderTestTable() {
             "subsection",
             false
           );
-          if (isLowGrade(input.value)) {
-            input.classList.add("low-grade");
-          }
           cell.appendChild(input);
           row.appendChild(cell);
         });
@@ -1138,9 +1132,6 @@ function renderTestTable() {
           "section",
           false
         );
-        if (isLowGrade(input.value)) {
-          input.classList.add("low-grade");
-        }
         cell.appendChild(input);
         row.appendChild(cell);
       }
