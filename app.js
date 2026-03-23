@@ -42,6 +42,7 @@ let fbGradingUnsubscribe = null;  // listener voti/test (read-write, nostro)
 let fbSaveTimer = null;           // debounce per non scrivere su Firebase a ogni tasto
 let fbIgnoreGrading = false;      // evita loop write→listen→write
 let tableRenderTimer = null;      // debounce per non ricaricare la tabella durante navigazione frecce
+let commentModalContext = null;   // contesto cella aperta nel dialog commento
 let isNavigatingWithArrows = false; // flag per evitare renderTestTable durante navigazione frecce
 
 // =====================================================================
@@ -438,6 +439,42 @@ function init() {
       }
     }
   });
+
+  // Listener dialog commento
+  const commentDialog   = document.getElementById("commentDialog");
+  const commentTextarea = document.getElementById("commentTextarea");
+  const commentSaveBtn  = document.getElementById("commentSaveBtn");
+  const commentDeleteBtn = document.getElementById("commentDeleteBtn");
+  const commentCancelBtn = document.getElementById("commentCancelBtn");
+
+  commentSaveBtn.addEventListener("click", () => {
+    if (!commentModalContext) return;
+    const { student, testId, sectionId, subsectionId, trigger } = commentModalContext;
+    const key = subsectionId ?? "direct";
+    ensureScoreStore(student, testId, sectionId);
+    if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
+    const text = commentTextarea.value.trim();
+    student.scores[testId][sectionId].comments[key] = text || null;
+    trigger.classList.toggle("has-comment", Boolean(text));
+    trigger.title = text || "Aggiungi commento";
+    saveState();
+    commentDialog.close();
+  });
+
+  commentDeleteBtn.addEventListener("click", () => {
+    if (!commentModalContext) return;
+    const { student, testId, sectionId, subsectionId, trigger } = commentModalContext;
+    const key = subsectionId ?? "direct";
+    if (student.scores?.[testId]?.[sectionId]?.comments) {
+      student.scores[testId][sectionId].comments[key] = null;
+    }
+    trigger.classList.remove("has-comment");
+    trigger.title = "Aggiungi commento";
+    saveState();
+    commentDialog.close();
+  });
+
+  commentCancelBtn.addEventListener("click", () => commentDialog.close());
 
   resetBtn.addEventListener("click", () => {
     if (confirm("Reset all data?")) {
@@ -1278,11 +1315,12 @@ function renderTestTable() {
             shouldDisable
           );
           cell.appendChild(input);
+          attachCommentTrigger(cell, student, selectedTest.id, section.id, subsection.id);
           
           // Aggiungi click handler per cambiare versione
           cell.style.cursor = "pointer";
           cell.addEventListener("click", (event) => {
-            if (event.target !== input) {
+            if (event.target !== input && !event.target.classList.contains("comment-trigger")) {
               if (isFacilitated) {
                 state.selectedTestVersionId = facilitatedVersionId;
               } else {
@@ -1310,11 +1348,12 @@ function renderTestTable() {
           shouldDisable
         );
         cell.appendChild(input);
+        attachCommentTrigger(cell, student, selectedTest.id, section.id, null);
         
         // Aggiungi click handler per cambiare versione
         cell.style.cursor = "pointer";
         cell.addEventListener("click", (event) => {
-          if (event.target !== input) {
+          if (event.target !== input && !event.target.classList.contains("comment-trigger")) {
             if (isFacilitated) {
               state.selectedTestVersionId = facilitatedVersionId;
             } else {
@@ -1542,6 +1581,42 @@ function createScoreInput(
  * Aggiorna solo la cella FINAL della riga senza ricostruire tutto il DOM.
  * Chiamata durante la digitazione per mostrare il voto finale in tempo reale.
  */
+/**
+ * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella.
+ */
+function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
+  const key = subsectionId ?? "direct";
+  const existingComment = student.scores?.[testId]?.[sectionId]?.comments?.[key];
+
+  const trigger = document.createElement("div");
+  trigger.className = "comment-trigger";
+  if (existingComment) {
+    trigger.classList.add("has-comment");
+    trigger.title = existingComment;
+  } else {
+    trigger.title = "Aggiungi commento";
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openCommentModal(student, testId, sectionId, subsectionId, trigger);
+  });
+
+  cell.appendChild(trigger);
+}
+
+/**
+ * Apre la modale per inserire/modificare il commento di una cella.
+ */
+function openCommentModal(student, testId, sectionId, subsectionId, trigger) {
+  commentModalContext = { student, testId, sectionId, subsectionId, trigger };
+  const key = subsectionId ?? "direct";
+  const existing = student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "";
+  document.getElementById("commentTextarea").value = existing;
+  document.getElementById("commentDialog").showModal();
+  document.getElementById("commentTextarea").focus();
+}
+
 function updateFinalCellInRow(input, student, test) {
   const cell = input.closest("td");
   if (!cell) return;

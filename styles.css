@@ -408,6 +408,86 @@ body {
   outline: 2px solid var(--flame-orange);
 }
 
+/* ── Comment trigger: bordo destro cliccabile ─────────────────────── */
+.grade-table tbody td {
+  position: relative;
+}
+
+.comment-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  background: #d8d8d8;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s, width 0.15s;
+}
+
+.comment-trigger:hover {
+  background: var(--glaucous);
+  width: 7px;
+}
+
+.comment-trigger.has-comment {
+  background: var(--flame-orange);
+}
+
+.comment-trigger.has-comment:hover {
+  background: #cc3c00;
+  width: 7px;
+}
+
+/* ── Dialog commento ───────────────────────────────────────────────── */
+#commentDialog {
+  border: 2px solid var(--pastel-pink);
+  border-radius: 14px;
+  padding: 0;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  min-width: 320px;
+  max-width: 480px;
+  width: 90vw;
+}
+
+#commentDialog::backdrop {
+  background: rgba(0,0,0,0.4);
+}
+
+.comment-dialog-inner {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.comment-dialog-inner h3 {
+  margin: 0;
+  color: var(--glaucous);
+}
+
+#commentTextarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--pastel-pink);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 90px;
+}
+
+#commentTextarea:focus {
+  outline: none;
+  border-color: var(--glaucous);
+}
+
+.comment-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .grade-table .student-cell input {
   text-align: left;
 }
