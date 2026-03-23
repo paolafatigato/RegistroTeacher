@@ -420,6 +420,25 @@ function init() {
 
   exportBtn.addEventListener("click", exportCSV);
 
+  // Listener globale per Ctrl+C / Ctrl+V nella tabella voti
+  document.addEventListener("keydown", (event) => {
+    if (!testView.classList.contains("active")) return;
+    const activeEl = document.activeElement;
+    if (!activeEl || !gradeTable.contains(activeEl)) return;
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      if (selectionState.selectedInputs.size > 0) {
+        event.preventDefault();
+        copySelectedCells();
+      }
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      if (selectionState.clipboard !== null) {
+        event.preventDefault();
+        pasteSelectedCells(activeEl);
+      }
+    }
+  });
+
   resetBtn.addEventListener("click", () => {
     if (confirm("Reset all data?")) {
       localStorage.removeItem(STORAGE_KEY);
@@ -897,6 +916,20 @@ function renderSections(version) {
 }
 
 function renderTestTable() {
+  // Salva la posizione del focus prima di ricostruire il DOM
+  const activeEl = document.activeElement;
+  let focusRowIdx = -1, focusCellIdx = -1, focusCursorPos = -1, focusRawValue = null;
+  if (activeEl && gradeTable.contains(activeEl) && activeEl.tagName === "INPUT") {
+    const row = activeEl.closest("tr");
+    const cell = activeEl.closest("td");
+    if (row && cell && row.parentElement.tagName === "TBODY") {
+      focusRowIdx = Array.from(row.parentElement.children).indexOf(row);
+      focusCellIdx = Array.from(row.children).indexOf(cell);
+      focusCursorPos = activeEl.selectionStart ?? -1;
+      focusRawValue = activeEl.value; // preserva il testo grezzo es. "7." o "1,5"
+    }
+  }
+
   gradeTable.innerHTML = "";
   warningArea.innerHTML = "";
 
@@ -1316,6 +1349,30 @@ function renderTestTable() {
 
   gradeTable.appendChild(tbody);
 
+  // Ripristina il focus sulla stessa cella dopo il re-render
+  if (focusRowIdx >= 0 && focusCellIdx >= 0) {
+    const tbody2 = gradeTable.querySelector("tbody");
+    if (tbody2) {
+      const targetRow = tbody2.children[focusRowIdx];
+      if (targetRow) {
+        const targetCell = targetRow.children[focusCellIdx];
+        if (targetCell) {
+          const targetInput = targetCell.querySelector("input");
+          if (targetInput && !targetInput.disabled) {
+            // Ripristina il testo grezzo prima del focus, così '7.' non viene troncato
+            if (focusRawValue !== null) {
+              targetInput.value = focusRawValue;
+            }
+            targetInput.focus();
+            if (focusCursorPos >= 0) {
+              try { targetInput.setSelectionRange(focusCursorPos, focusCursorPos); } catch (e) {}
+            }
+          }
+        }
+      }
+    }
+  }
+
   warnings.forEach((message) => {
     const warning = document.createElement("div");
     warning.classList.add("warning");
@@ -1347,7 +1404,6 @@ function createScoreInput(
   }
 
   input.addEventListener("blur", (event) => {
-    // Salva il valore quando l'input perde il focus (senza ricaricare la tabella)
     const value = parseNumber(event.target.value);
     if (type === "subsection") {
       student.scores[testId][sectionId].subsections[subsectionId] = value;
@@ -1355,16 +1411,22 @@ function createScoreInput(
       student.scores[testId][sectionId].direct = value;
     }
     saveState();
+    // Re-render completo solo quando si lascia la cella, mai durante la digitazione
+    if (!isNavigatingWithArrows) {
+      renderTestTable();
+    }
   });
 
-  input.addEventListener("change", (event) => {
-    // Se NON siamo in navigazione frecce, renderizza la tabella con debounce
-    if (!isNavigatingWithArrows) {
-      clearTimeout(tableRenderTimer);
-      tableRenderTimer = setTimeout(() => {
-        renderTestTable();
-      }, 300);
+  // Aggiorna solo lo stato mentre si digita (nessun re-render DOM)
+  input.addEventListener("input", (event) => {
+    const value = parseNumber(event.target.value);
+    if (type === "subsection") {
+      student.scores[testId][sectionId].subsections[subsectionId] = value;
+    } else {
+      student.scores[testId][sectionId].direct = value;
     }
+    // Aggiorna la cella FINAL della riga in-place, senza toccare il DOM dell'input attivo
+    updateFinalCellInRow(input, student, getSelectedTest());
   });
 
   // Navigazione tra celle con frecce della tastiera
@@ -1470,7 +1532,33 @@ function createScoreInput(
     }
   });
 
+  // Inizializza la multi-selezione per questo input
+  initializeInputSelection(input);
+
   return input;
+}
+
+/**
+ * Aggiorna solo la cella FINAL della riga senza ricostruire tutto il DOM.
+ * Chiamata durante la digitazione per mostrare il voto finale in tempo reale.
+ */
+function updateFinalCellInRow(input, student, test) {
+  const cell = input.closest("td");
+  if (!cell) return;
+  const row = cell.closest("tr");
+  if (!row) return;
+  const finalCell = row.querySelector("td.final-cell");
+  if (!finalCell) return;
+
+  const selectedTest = test ?? getSelectedTest();
+  if (!selectedTest) return;
+
+  ensureVersionSelections();
+  const activeVersion = getVersionById(selectedTest, state.selectedTestVersionId)
+    ?? getDefaultVersion(selectedTest);
+  const finalScore = getFinalScore(student, selectedTest, activeVersion);
+  finalCell.textContent = formatScore(finalScore);
+  finalCell.classList.toggle("low-grade", isLowGrade(finalScore));
 }
 
 function ensureScoreStore(student, testId, sectionId) {
@@ -2474,3 +2562,291 @@ function setFirebaseStatus(message, type = "info") {
 
 // Le classi sono read-only da classroomanager — non scriviamo su Firebase
 function saveClassesToFirebase() {}
+
+// =====================================================================
+//  MULTI-SELECTION & COPY/PASTE FUNCTIONALITY
+//  Permette di selezionare più celle e copiarle/incollarle come Excel
+// =====================================================================
+
+// Stato di selezione
+let selectionState = {
+  selectedInputs: new Set(),
+  clipboard: null,
+  clipboardLayout: null, // { rows, cols } per paste smarter
+  isSelecting: false,
+  startInput: null,
+};
+
+/**
+ * Inizializza la multi-selezione per un input della tabella.
+ * Logica:
+ * - Click semplice       → focus normale, nessuna interferenza
+ * - Shift+Click          → range selection
+ * - Ctrl+Click           → toggle selezione singola
+ * - Mousedown + trascinamento → selezione rettangolare
+ */
+function initializeInputSelection(input) {
+  input.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+
+    if (event.shiftKey && selectionState.startInput) {
+      // Shift+Click: seleziona il range, ma lascia il focus all'input
+      selectRangeBetween(selectionState.startInput, input);
+      event.preventDefault();
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl+Click: toggle cella singola senza perdere il focus
+      toggleInputSelection(input);
+      event.preventDefault();
+      return;
+    }
+
+    // Click semplice: NON fare nulla qui — lascia che il browser gestisca
+    // focus e cursor normalmente. Pulisci la selezione visiva solo su focus,
+    // così non interferisce con la digitazione.
+    selectionState.startInput = input;
+    selectionState.isSelecting = false;
+
+    // Inizia il drag solo se il mouse si muove mentre il tasto è premuto
+    const onMouseMove = () => {
+      if (!selectionState.isSelecting) {
+        selectionState.isSelecting = true;
+        clearSelection();
+        addToSelection(input);
+      }
+    };
+
+    const onMouseUp = () => {
+      selectionState.isSelecting = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+
+  input.addEventListener("focus", () => {
+    // Se non siamo in drag, in navigazione frecce, e nessuna selezione attiva su questo input, pulisci
+    if (!selectionState.isSelecting && !isNavigatingWithArrows && !selectionState.selectedInputs.has(input)) {
+      clearSelection();
+    }
+    selectionState.startInput = input;
+  });
+
+  // Estendi la selezione durante il trascinamento
+  input.addEventListener("mouseover", () => {
+    if (!selectionState.isSelecting) return;
+    if (selectionState.startInput && input !== selectionState.startInput) {
+      selectRangeBetween(selectionState.startInput, input);
+    }
+  });
+}
+
+/**
+ * Aggiunge un input alla selezione e lo evidenzia
+ */
+function addToSelection(input) {
+  selectionState.selectedInputs.add(input);
+  input.classList.add("selected");
+}
+
+/**
+ * Rimuove un input dalla selezione
+ */
+function removeFromSelection(input) {
+  selectionState.selectedInputs.delete(input);
+  input.classList.remove("selected");
+}
+
+/**
+ * Alterna lo stato di selezione di un input (Ctrl+Click)
+ */
+function toggleInputSelection(input) {
+  if (selectionState.selectedInputs.has(input)) {
+    removeFromSelection(input);
+  } else {
+    addToSelection(input);
+  }
+  selectionState.startInput = input;
+}
+
+/**
+ * Seleziona tutti gli input tra due celle (Shift+Click o range selection)
+ */
+function selectRangeBetween(input1, input2) {
+  const table = gradeTable;
+  const rows = Array.from(table.querySelectorAll("tbody tr"));
+  
+  // Trova i due input nella tabella
+  let start = -1, end = -1;
+  let startCol = -1, endCol = -1;
+  
+  rows.forEach((row, rowIdx) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    cells.forEach((cell, colIdx) => {
+      const cellInput = cell.querySelector("input");
+      if (cellInput === input1) {
+        start = rowIdx;
+        startCol = colIdx;
+      }
+      if (cellInput === input2) {
+        end = rowIdx;
+        endCol = colIdx;
+      }
+    });
+  });
+  
+  if (start === -1 || end === -1 || startCol === -1 || endCol === -1) return;
+  
+  // Normalizza start/end (il range può andare in qualsiasi direzione)
+  const minRow = Math.min(start, end);
+  const maxRow = Math.max(start, end);
+  const minCol = Math.min(startCol, endCol);
+  const maxCol = Math.max(startCol, endCol);
+  
+  // Seleziona tutti gli input nel rettangolo
+  clearSelection();
+  for (let r = minRow; r <= maxRow; r++) {
+    const cells = Array.from(rows[r].querySelectorAll("td"));
+    for (let c = minCol; c <= maxCol; c++) {
+      if (cells[c]) {
+        const cellInput = cells[c].querySelector("input");
+        if (cellInput) {
+          addToSelection(cellInput);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Cancella tutta la selezione
+ */
+function clearSelection() {
+  selectionState.selectedInputs.forEach((input) => {
+    input.classList.remove("selected");
+  });
+  selectionState.selectedInputs.clear();
+}
+
+/**
+ * Copia i valori delle celle selezionate negli appunti
+ * Formato: tab-separated per righe, newline-separated per colonne
+ */
+function copySelectedCells() {
+  if (selectionState.selectedInputs.size === 0) {
+    return;
+  }
+  
+  // Estrai gli input selezionati dalla tabella mantenendo la struttura
+  const table = gradeTable;
+  const rows = Array.from(table.querySelectorAll("tbody tr"));
+  const clipboard = [];
+  const layout = { rows: new Set(), cols: new Set() };
+  
+  rows.forEach((row, rowIdx) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    cells.forEach((cell, colIdx) => {
+      const cellInput = cell.querySelector("input");
+      if (cellInput && selectionState.selectedInputs.has(cellInput)) {
+        layout.rows.add(rowIdx);
+        layout.cols.add(colIdx);
+        clipboard.push({
+          row: rowIdx,
+          col: colIdx,
+          value: cellInput.value || "",
+        });
+      }
+    });
+  });
+  
+  // Converti in formato tab-separated per Excel
+  if (clipboard.length > 0) {
+    const minRow = Math.min(...layout.rows);
+    const minCol = Math.min(...layout.cols);
+    const maxRow = Math.max(...layout.rows);
+    const maxCol = Math.max(...layout.cols);
+    
+    const lines = [];
+    for (let r = minRow; r <= maxRow; r++) {
+      const line = [];
+      for (let c = minCol; c <= maxCol; c++) {
+        const cell = clipboard.find(item => item.row === r && item.col === c);
+        line.push(cell ? cell.value : "");
+      }
+      lines.push(line.join("\t"));
+    }
+    
+    selectionState.clipboard = lines.join("\n");
+    selectionState.clipboardLayout = {
+      rows: Array.from(layout.rows),
+      cols: Array.from(layout.cols),
+    };
+
+    // Copia negli appunti del browser con textarea trick (funziona sempre)
+    const ta = document.createElement("textarea");
+    ta.value = selectionState.clipboard;
+    ta.style.cssText = "position:fixed;opacity:0;pointer-events:none;top:0;left:0;";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+/**
+ * Incolla i valori degli appunti a partire dalla cella selezionata
+ */
+function pasteSelectedCells(startInput) {
+  if (!selectionState.clipboard) {
+    return;
+  }
+  
+  const table = gradeTable;
+  const rows = Array.from(table.querySelectorAll("tbody tr"));
+  
+  // Trova il punto di partenza del paste
+  let startRow = -1, startCol = -1;
+  rows.forEach((row, rowIdx) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    cells.forEach((cell, colIdx) => {
+      const cellInput = cell.querySelector("input");
+      if (cellInput === startInput) {
+        startRow = rowIdx;
+        startCol = colIdx;
+      }
+    });
+  });
+  
+  if (startRow === -1 || startCol === -1) return;
+  
+  // Parsa il clipboard
+  const lines = selectionState.clipboard.split("\n");
+  lines.forEach((line, lineIdx) => {
+    const values = line.split("\t");
+    const targetRow = startRow + lineIdx;
+    
+    if (targetRow >= rows.length) return;
+    
+    const cells = Array.from(rows[targetRow].querySelectorAll("td"));
+    values.forEach((value, valueIdx) => {
+      const targetCol = startCol + valueIdx;
+      if (targetCol >= cells.length) return;
+      
+      const targetCell = cells[targetCol];
+      if (!targetCell) return;
+      
+      const targetInput = targetCell.querySelector("input");
+      if (!targetInput || targetInput.disabled) return;
+      
+      // Incolla il valore
+      targetInput.value = value;
+      targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+      targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}

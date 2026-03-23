@@ -398,6 +398,16 @@ body {
   background: var(--white);
 }
 
+.grade-table input.selected {
+  background: #FFFACD;
+  outline: 2px solid var(--flame-orange);
+}
+
+.grade-table input.selected:focus {
+  background: #FFFFE0;
+  outline: 2px solid var(--flame-orange);
+}
+
 .grade-table .student-cell input {
   text-align: left;
 }
