@@ -356,7 +356,9 @@ function init() {
       e.preventDefault();
       const name = newTestNameInput.value.trim() || generateTestName();
       const subject = newTestSubjectInput.value.trim();
-      const newTest = createTest(name, subject);
+      const newTestCategoryInput = document.getElementById("newTestCategoryInput");
+      const category = newTestCategoryInput ? newTestCategoryInput.value.trim() : "";
+      const newTest = createTest(name, subject, category);
       state.tests.push(newTest);
       state.selectedTestId = newTest.id;
       state.selectedTestVersionId = newTest.versions[0]?.id ?? null;
@@ -618,22 +620,41 @@ function renderClassDetail() {
 
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
+
   const studentHeader = document.createElement("th");
   studentHeader.textContent = "Studente";
   headerRow.appendChild(studentHeader);
+
+  // Colonna DSA/104
+  const dsaHeader = document.createElement("th");
+  dsaHeader.textContent = "DSA/104";
+  dsaHeader.title = "Studente con DSA o Legge 104 – riceverà automaticamente la versione facilitata";
+  dsaHeader.style.cssText = "width:80px;text-align:center;font-size:.85em;";
+  headerRow.appendChild(dsaHeader);
 
   // Filtra i test: mostra solo quelli che hanno almeno un voto nella classe
   const visibleTests = state.tests.filter((test) => testHasGradesInClass(test, selectedClass));
   
   visibleTests.forEach((test) => {
     const th = document.createElement("th");
-    th.innerHTML = `<div>${test.title || "Verifica"}</div>`;
+    let label = test.title || "Verifica";
+    // Aggiungi data classe se disponibile
+    const dateForClass = test.classDates?.[selectedClass.id];
+    if (dateForClass) {
+      label += " · " + dateForClass;
+    }
+    th.innerHTML = `<div>${label}</div>`;
     if (test.subject && test.subject.trim() !== "") {
       const subjectDiv = document.createElement("div");
-      subjectDiv.style.fontSize = "11px";
-      subjectDiv.style.color = "#666";
+      subjectDiv.style.cssText = "font-size:11px;color:#666;";
       subjectDiv.textContent = test.subject;
       th.appendChild(subjectDiv);
+    }
+    if ((test.categories || []).length > 0) {
+      const catDiv = document.createElement("div");
+      catDiv.style.cssText = "font-size:10px;color:#9f7aea;font-style:italic;";
+      catDiv.textContent = test.categories.join(", ");
+      th.appendChild(catDiv);
     }
     headerRow.appendChild(th);
   });
@@ -652,8 +673,13 @@ function renderClassDetail() {
   const tbody = document.createElement("tbody");
 
   selectedClass.students.forEach((student) => {
+    const isFacilitated = student.facilitated === true;
     const row = document.createElement("tr");
+    if (isFacilitated) {
+      row.classList.add("facilitated-list-row");
+    }
 
+    // Nome studente
     const studentCell = document.createElement("td");
     studentCell.classList.add("student-cell");
     const nameInput = document.createElement("input");
@@ -665,7 +691,29 @@ function renderClassDetail() {
       renderClassDetail();
     });
     studentCell.appendChild(nameInput);
+    // Badge DSA inline accanto al nome
+    if (isFacilitated) {
+      const badge = document.createElement("span");
+      badge.className = "dsa-badge";
+      badge.textContent = "DSA/104";
+      studentCell.appendChild(badge);
+    }
     row.appendChild(studentCell);
+
+    // Toggle DSA/104
+    const dsaCell = document.createElement("td");
+    dsaCell.style.textAlign = "center";
+    const dsaToggle = document.createElement("input");
+    dsaToggle.type = "checkbox";
+    dsaToggle.checked = isFacilitated;
+    dsaToggle.title = "Segna come DSA / Legge 104";
+    dsaToggle.addEventListener("change", (event) => {
+      student.facilitated = event.target.checked;
+      saveState();
+      renderClassDetail();
+    });
+    dsaCell.appendChild(dsaToggle);
+    row.appendChild(dsaCell);
 
     visibleTests.forEach((test) => {
       const score = getFinalScore(student, test);
@@ -708,31 +756,278 @@ function renderClassDetail() {
 
 function renderTestsList() {
   testsList.innerHTML = "";
-  state.tests.forEach((test) => {
+  state.tests.forEach(ensureTestMeta);
+
+  // ── Valori unici per i filtri ────────────────────────────────────────────
+  const allSubjects    = [...new Set(state.tests.map(t => t.subject).filter(Boolean))].sort();
+  const allCategories  = [...new Set(state.tests.flatMap(t => t.categories || []).filter(Boolean))].sort();
+
+  const filterClass    = document.getElementById("filterClass")?.value    || "";
+  const filterSubject  = document.getElementById("filterSubject")?.value  || "";
+  const filterCategory = document.getElementById("filterCategory")?.value || "";
+
+  // ── Barra filtri ─────────────────────────────────────────────────────────
+  const existingBar = document.getElementById("testsFilterBar");
+  if (existingBar) existingBar.remove();
+
+  const bar = document.createElement("div");
+  bar.id = "testsFilterBar";
+  bar.className = "filter-bar";
+  bar.innerHTML = `
+    <span class="filter-bar-label">🔍 Filtra:</span>
+    <select id="filterClass">
+      <option value="">Tutte le classi</option>
+      ${state.classes.map(c => `<option value="${c.id}" ${filterClass===c.id?"selected":""}>${c.name}</option>`).join("")}
+    </select>
+    <select id="filterSubject">
+      <option value="">Tutte le materie</option>
+      ${allSubjects.map(s => `<option value="${s}" ${filterSubject===s?"selected":""}>${s}</option>`).join("")}
+    </select>
+    <select id="filterCategory">
+      <option value="">Tutte le categorie</option>
+      ${allCategories.map(c => `<option value="${c}" ${filterCategory===c?"selected":""}>${c}</option>`).join("")}
+    </select>
+    <button class="btn btn-secondary btn-small" id="clearFiltersBtn">✕ Reset</button>
+  `;
+  testsList.parentElement.insertBefore(bar, testsList);
+  bar.querySelectorAll("select").forEach(sel => sel.addEventListener("change", renderTestsList));
+  bar.querySelector("#clearFiltersBtn").addEventListener("click", () => {
+    bar.querySelectorAll("select").forEach(s => s.value = "");
+    renderTestsList();
+  });
+
+  // ── Filtro ────────────────────────────────────────────────────────────────
+  const filtered = state.tests.filter(test => {
+    if (filterSubject  && test.subject !== filterSubject)  return false;
+    if (filterCategory && !(test.categories || []).includes(filterCategory)) return false;
+    if (filterClass    && !test.classIds.includes(filterClass)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    testsList.innerHTML = `<p style="color:#888;padding:12px;">Nessuna verifica corrisponde ai filtri.</p>`;
+    return;
+  }
+
+  // ── Render card ───────────────────────────────────────────────────────────
+  filtered.forEach((test) => {
+    ensureTestVersions(test);
     const card = document.createElement("div");
     card.classList.add("card");
 
-    ensureTestVersions(test);
-    const defaultVersion = getDefaultVersion(test);
+    // Titolo (read-only, modificabile nel pannello)
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = test.title || "Verifica";
+    titleEl.style.cssText = "margin-bottom:6px;";
+    card.appendChild(titleEl);
 
-    const title = document.createElement("h3");
-    title.textContent = test.title || "Verifica";
-    card.appendChild(title);
+    // Materia + Categorie
+    const metaRow = document.createElement("div");
+    metaRow.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;align-items:center;";
+    if (test.subject) {
+      const sub = document.createElement("span");
+      sub.className = "test-meta-chip test-subject-chip";
+      sub.textContent = "📚 " + test.subject;
+      metaRow.appendChild(sub);
+    }
+    (test.categories || []).forEach(cat => {
+      const chip = document.createElement("span");
+      chip.className = "test-meta-chip test-category-chip";
+      chip.textContent = "🏷️ " + cat;
+      metaRow.appendChild(chip);
+    });
+    if (metaRow.children.length) card.appendChild(metaRow);
 
-    // Materia
-    if (test.subject && test.subject.trim() !== "") {
-      const subject = document.createElement("div");
-      subject.classList.add("test-subject");
-      subject.textContent = `Materia: ${test.subject}`;
-      card.appendChild(subject);
+    // Classi + date
+    if (test.classIds.length > 0) {
+      const classRow = document.createElement("div");
+      classRow.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;";
+      test.classIds.forEach(cid => {
+        const cls = state.classes.find(c => c.id === cid);
+        if (!cls) return;
+        const date = test.classDates[cid] || "";
+        const chip = document.createElement("span");
+        chip.className = "class-date-chip";
+        chip.textContent = cls.name + (date ? " · " + date : "");
+        classRow.appendChild(chip);
+      });
+      if (classRow.children.length) card.appendChild(classRow);
     }
 
     const info = document.createElement("small");
-    info.textContent = `${defaultVersion?.sections.length ?? 0} sezioni`;
+    info.textContent = `${getDefaultVersion(test)?.sections.length ?? 0} sezioni`;
+    info.style.color = "#888";
     card.appendChild(info);
 
+    // ── Pannello "Modifica dettagli" ──────────────────────────────────────
+    const detailsToggle = document.createElement("button");
+    detailsToggle.className = "btn btn-secondary btn-small";
+    detailsToggle.style.cssText = "margin-top:8px;font-size:.8em;";
+    detailsToggle.textContent = "✏️ Modifica dettagli";
+
+    const detailsPanel = document.createElement("div");
+    detailsPanel.className = "test-details-panel";
+    detailsPanel.style.display = "none";
+
+    // Costruiamo il pannello in JS (no innerHTML con dati user per sicurezza)
+    const makeField = (labelText, child) => {
+      const wrap = document.createElement("div");
+      wrap.className = "field";
+      wrap.style.marginTop = "10px";
+      const lbl = document.createElement("label");
+      lbl.textContent = labelText;
+      wrap.appendChild(lbl);
+      wrap.appendChild(child);
+      return wrap;
+    };
+
+    // — Nome verifica —
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = test.title || "";
+    nameInput.placeholder = "Nome della verifica";
+    detailsPanel.appendChild(makeField("Nome verifica", nameInput));
+
+    // — Materia —
+    const subjectInput = document.createElement("input");
+    subjectInput.type = "text";
+    subjectInput.value = test.subject || "";
+    subjectInput.placeholder = "es. English, Storia…";
+    detailsPanel.appendChild(makeField("Materia", subjectInput));
+
+    // — Categorie (tag) —
+    const catField = document.createElement("div");
+    catField.className = "field";
+    catField.style.marginTop = "10px";
+    const catLabel = document.createElement("label");
+    catLabel.textContent = "Categorie";
+    catField.appendChild(catLabel);
+
+    const tagBox = document.createElement("div");
+    tagBox.className = "tag-box";
+
+    const renderTags = () => {
+      tagBox.innerHTML = "";
+      (test.categories || []).forEach((cat, idx) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        chip.innerHTML = `${cat} <button class="tag-remove" data-idx="${idx}" title="Rimuovi">×</button>`;
+        tagBox.appendChild(chip);
+      });
+      // Input per aggiungere tag
+      const addWrap = document.createElement("div");
+      addWrap.style.cssText = "display:flex;gap:6px;margin-top:6px;";
+      const tagInput = document.createElement("input");
+      tagInput.type = "text";
+      tagInput.placeholder = "Aggiungi categoria…";
+      tagInput.style.cssText = "flex:1;padding:5px 9px;border-radius:7px;border:1.5px solid #e2b4c8;font-size:.88em;";
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn btn-secondary btn-small";
+      addBtn.textContent = "+ Aggiungi";
+      addBtn.style.fontSize = ".82em";
+      const doAdd = () => {
+        const val = tagInput.value.trim();
+        if (val && !test.categories.includes(val)) {
+          test.categories.push(val);
+          renderTags();
+        }
+        tagInput.value = "";
+      };
+      addBtn.addEventListener("click", doAdd);
+      tagInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+      addWrap.appendChild(tagInput);
+      addWrap.appendChild(addBtn);
+      tagBox.appendChild(addWrap);
+
+      // Rimozione tag via ×
+      tagBox.querySelectorAll(".tag-remove").forEach(btn => {
+        btn.addEventListener("click", () => {
+          test.categories.splice(parseInt(btn.dataset.idx), 1);
+          renderTags();
+        });
+      });
+    };
+    renderTags();
+    catField.appendChild(tagBox);
+    detailsPanel.appendChild(catField);
+
+    // — Classi + date —
+    const clsField = document.createElement("div");
+    clsField.className = "field";
+    clsField.style.marginTop = "10px";
+    const clsLabel = document.createElement("label");
+    clsLabel.textContent = "Classi che svolgono questa verifica";
+    clsField.appendChild(clsLabel);
+    const clsList = document.createElement("div");
+    clsList.className = "class-check-list";
+    state.classes.forEach(c => {
+      const row = document.createElement("label");
+      row.className = "class-check-row";
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "cls-check";
+      chk.dataset.classId = c.id;
+      chk.checked = test.classIds.includes(c.id);
+      const nameSp = document.createElement("span");
+      nameSp.textContent = c.name;
+      const dateIn = document.createElement("input");
+      dateIn.type = "date";
+      dateIn.className = "cls-date";
+      dateIn.dataset.classId = c.id;
+      dateIn.value = test.classDates[c.id] || "";
+      dateIn.disabled = !chk.checked;
+      dateIn.style.cssText = "margin-left:8px;font-size:.85em;border:1px solid #ddd;border-radius:6px;padding:2px 6px;";
+      chk.addEventListener("change", () => { dateIn.disabled = !chk.checked; });
+      row.appendChild(chk);
+      row.appendChild(nameSp);
+      row.appendChild(dateIn);
+      clsList.appendChild(row);
+    });
+    clsField.appendChild(clsList);
+    detailsPanel.appendChild(clsField);
+
+    // — Salva —
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "btn btn-primary btn-small";
+    saveBtn.style.marginTop = "10px";
+    saveBtn.textContent = "💾 Salva dettagli";
+    saveBtn.addEventListener("click", () => {
+      // Nome + Materia
+      test.title   = nameInput.value.trim()   || test.title;
+      test.subject = subjectInput.value.trim();
+      // Classi + date (categories già aggiornate live)
+      test.classIds = [];
+      clsList.querySelectorAll(".cls-check").forEach(chk => {
+        if (chk.checked) {
+          const cid = chk.dataset.classId;
+          test.classIds.push(cid);
+          const di = clsList.querySelector(`.cls-date[data-class-id="${cid}"]`);
+          if (di?.value) test.classDates[cid] = di.value;
+          else delete test.classDates[cid];
+        }
+      });
+      Object.keys(test.classDates).forEach(cid => {
+        if (!test.classIds.includes(cid)) delete test.classDates[cid];
+      });
+      saveState();
+      renderTestsList();
+    });
+    detailsPanel.appendChild(saveBtn);
+
+    detailsToggle.addEventListener("click", () => {
+      const open = detailsPanel.style.display === "block";
+      detailsPanel.style.display = open ? "none" : "block";
+      detailsToggle.textContent = open ? "✏️ Modifica dettagli" : "▲ Chiudi";
+    });
+
+    card.appendChild(detailsToggle);
+    card.appendChild(detailsPanel);
+
+    // ── Azioni principali ─────────────────────────────────────────────────
     const actions = document.createElement("div");
     actions.classList.add("panel-actions");
+    actions.style.marginTop = "10px";
 
     const evalBtn = document.createElement("button");
     evalBtn.classList.add("btn", "btn-secondary");
@@ -744,6 +1039,7 @@ function renderTestsList() {
       setView("test");
     });
     actions.appendChild(evalBtn);
+
     if (configView) {
       const configBtn = document.createElement("button");
       configBtn.classList.add("btn", "btn-secondary");
@@ -756,8 +1052,21 @@ function renderTestsList() {
       });
       actions.appendChild(configBtn);
     }
-    card.appendChild(actions);
 
+    const deleteBtn = document.createElement("button");
+    deleteBtn.classList.add("icon-btn", "card-delete");
+    deleteBtn.textContent = "×";
+    deleteBtn.setAttribute("aria-label", "Elimina verifica");
+    deleteBtn.addEventListener("click", () => {
+      if (!confirm(`Eliminare la verifica "${test.title}"? Tutti i voti andranno persi.`)) return;
+      state.tests = state.tests.filter(t => t.id !== test.id);
+      saveState();
+      renderTestsList();
+      renderTestTable();
+    });
+    card.appendChild(deleteBtn);
+
+    card.appendChild(actions);
     testsList.appendChild(card);
   });
 }
@@ -1650,6 +1959,7 @@ function ensureScoreStore(student, testId, sectionId) {
 
 function getSectionScore(student, test, section) {
   ensureScoreStore(student, test.id, section.id);
+  if (!Array.isArray(section.subsections)) section.subsections = [];
   if (section.subsections.length > 0) {
     const totals = getSectionTotals(section);
     if (totals.totalWeight <= 0 || totals.totalMax <= 0) {
@@ -2005,7 +2315,7 @@ function createStudent() {
   };
 }
 
-function createTest(title, subject) {
+function createTest(title, subject, category) {
   const standardVersionId = createId("ver");
   const facilitatedVersionId = createId("ver");
   const baseVersion = {
@@ -2022,9 +2332,24 @@ function createTest(title, subject) {
     id: createId("test"),
     title: title || "Nuova verifica",
     subject: subject || "",
+    categories: category ? [category] : [],
+    classIds: [],
+    classDates: {},
     versions: [baseVersion, facilitatedVersion],
     facilitatedVersionId: facilitatedVersionId,
   };
+}
+
+/** Garantisce che i test vecchi abbiano i nuovi campi */
+function ensureTestMeta(test) {
+  if (!test) return;
+  // Migra vecchio campo "category" (stringa) → "categories" (array)
+  if (!Array.isArray(test.categories)) {
+    test.categories = test.category ? test.category.split(/[,;]+/).map(s => s.trim()).filter(Boolean) : [];
+    delete test.category;
+  }
+  if (!test.classIds)   test.classIds   = [];
+  if (!test.classDates) test.classDates = {};
 }
 
 function createClass(name) {
@@ -2244,6 +2569,7 @@ function loadState() {
 
     tests.forEach((testItem) => {
       ensureTestVersions(testItem);
+      ensureTestMeta(testItem);
     });
 
     if (tests[0]) {
@@ -2371,7 +2697,7 @@ function ensureTestState() {
   if (!state.tests || state.tests.length === 0) {
     state.tests = [createTest("Test 1")];
   }
-  state.tests.forEach((test) => ensureTestVersions(test));
+  state.tests.forEach((test) => { ensureTestVersions(test); ensureTestMeta(test); });
   const hasSelected = state.tests.some(
     (testItem) => testItem.id === state.selectedTestId
   );
@@ -2535,7 +2861,7 @@ function applyFirebaseGrading(data) {
   // Aggiorna i test (struttura verifiche, sezioni, pesi)
   if (Array.isArray(data.tests) && data.tests.length > 0) {
     state.tests = data.tests;
-    state.tests.forEach((t) => ensureTestVersions(t));
+    state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
   }
 
   // Memorizza le mappe in state così mergeFirebaseClasses le userà

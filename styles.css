@@ -751,3 +751,174 @@ body {
 .section-card .remove-section:active {
   transform: scale(0.95);
 }
+/* ═══════════════════════════════════════════════════════════
+   NUOVI STILI — Verifiche: filtri, meta-chip, class-date-chip
+   ═══════════════════════════════════════════════════════════ */
+
+/* Barra filtri sopra la griglia delle verifiche */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(109, 134, 200, 0.07);
+  border: 1.5px solid rgba(109, 134, 200, 0.2);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.filter-bar-label {
+  font-weight: 700;
+  font-size: .85em;
+  color: var(--glaucous);
+  white-space: nowrap;
+}
+
+.filter-bar select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--pastel-pink);
+  font-size: .85em;
+  background: #fff;
+  color: var(--text-dark);
+  cursor: pointer;
+}
+
+.filter-bar select:focus {
+  outline: none;
+  border-color: var(--glaucous);
+}
+
+/* Chip materia / categoria sulle card */
+.test-meta-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: .78em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.test-subject-chip {
+  background: rgba(109, 134, 200, 0.15);
+  color: var(--glaucous);
+  border: 1px solid rgba(109, 134, 200, 0.35);
+}
+
+.test-category-chip {
+  background: rgba(159, 122, 234, 0.13);
+  color: #7c4dbd;
+  border: 1px solid rgba(159, 122, 234, 0.35);
+}
+
+/* Chip classe + data sulle card */
+.class-date-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: .77em;
+  font-weight: 700;
+  background: rgba(63, 120, 76, 0.1);
+  color: var(--goodgrade);
+  border: 1px solid rgba(63, 120, 76, 0.3);
+  white-space: nowrap;
+}
+
+/* Pannello dettagli espandibile nella card */
+.test-details-panel {
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: var(--antique-white);
+  border-radius: 10px;
+  border: 1.5px solid var(--pastel-pink);
+}
+
+.class-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.class-check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .88em;
+  cursor: pointer;
+}
+
+.class-check-row input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--glaucous);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NUOVI STILI — Classi: riga DSA/104 e badge
+   ═══════════════════════════════════════════════════════════ */
+
+/* Riga studente DSA/104 nella tabella classe */
+.grade-table tr.facilitated-list-row td {
+  background: linear-gradient(90deg,
+    rgba(159, 122, 234, 0.10),
+    rgba(255, 190, 198, 0.13)
+  ) !important;
+}
+
+/* Badge DSA/104 inline nel nome studente */
+.dsa-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: .72em;
+  font-weight: 800;
+  letter-spacing: .03em;
+  background: rgba(159, 122, 234, 0.18);
+  color: #7c4dbd;
+  border: 1.5px solid rgba(159, 122, 234, 0.4);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* ── Tag system (categorie multiple) ────────────────────────────── */
+.tag-box {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: .82em;
+  font-weight: 700;
+  background: rgba(159, 122, 234, 0.13);
+  color: #7c4dbd;
+  border: 1.5px solid rgba(159, 122, 234, 0.4);
+  white-space: nowrap;
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #a77bca;
+  font-size: 1em;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0 1px;
+  transition: color .15s;
+}
+
+.tag-remove:hover {
+  color: var(--flame-orange);
+}
