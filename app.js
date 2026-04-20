@@ -2771,6 +2771,7 @@ function initFirebase() {
   const firebaseBadge = document.getElementById("firebaseBadge");
 
   fbAuth.onAuthStateChanged((user) => {
+    const prevUser = fbUser; // salva utente precedente PRIMA di sovrascrivere
     fbUser = user;
 
     if (user) {
@@ -2790,12 +2791,12 @@ function initFirebase() {
       if (firebaseBadge) firebaseBadge.style.display = "none";
       setFirebaseStatus("🔒 Accedi con Google per caricare le classi da Firebase");
 
-      if (fbClassesUnsubscribe && fbUser) {
-        fbDb.ref(`/users/${fbUser.uid}/classes`).off("value", fbClassesUnsubscribe);
+      if (fbClassesUnsubscribe && prevUser) {
+        fbDb.ref(`/users/${prevUser.uid}/classes`).off("value", fbClassesUnsubscribe);
         fbClassesUnsubscribe = null;
       }
-      if (fbGradingUnsubscribe && fbUser) {
-        fbDb.ref(`/users/${fbUser.uid}/grading`).off("value", fbGradingUnsubscribe);
+      if (fbGradingUnsubscribe && prevUser) {
+        fbDb.ref(`/users/${prevUser.uid}/grading`).off("value", fbGradingUnsubscribe);
         fbGradingUnsubscribe = null;
       }
       clearTimeout(fbSaveTimer);
@@ -2854,13 +2855,58 @@ function startClassesListener() {
 }
 
 /**
+ * Firebase converte array vuoti ([]) in null e array in oggetti con chiavi numeriche.
+ * Questa funzione ripristina la struttura corretta di un test dopo il caricamento.
+ */
+function normalizeTestFromFirebase(test) {
+  if (!test || typeof test !== 'object') return test;
+
+  // Normalizza sections: Firebase può restituire un oggetto {"0":{...}} invece di array
+  if (test.sections && !Array.isArray(test.sections)) {
+    test.sections = Object.values(test.sections);
+  }
+  if (!Array.isArray(test.sections)) test.sections = [];
+  test.sections.forEach((sec) => {
+    // subsections: [] viene salvato come null da Firebase — ripristina a []
+    if (sec.subsections && !Array.isArray(sec.subsections)) {
+      sec.subsections = Object.values(sec.subsections);
+    }
+    if (!Array.isArray(sec.subsections)) sec.subsections = [];
+  });
+
+  // Normalizza versions
+  if (test.versions && !Array.isArray(test.versions)) {
+    test.versions = Object.values(test.versions);
+  }
+  if (!Array.isArray(test.versions)) test.versions = [];
+  test.versions.forEach((ver) => {
+    if (ver.sections && !Array.isArray(ver.sections)) {
+      ver.sections = Object.values(ver.sections);
+    }
+    if (!Array.isArray(ver.sections)) ver.sections = [];
+    ver.sections.forEach((sec) => {
+      if (sec.subsections && !Array.isArray(sec.subsections)) {
+        sec.subsections = Object.values(sec.subsections);
+      }
+      if (!Array.isArray(sec.subsections)) sec.subsections = [];
+    });
+  });
+
+  return test;
+}
+
+/**
  * Applica i dati di grading arrivati da Firebase allo state.
  * Chiamata dal listener real-time OPPURE all'avvio per caricare i dati da un altro dispositivo.
  */
 function applyFirebaseGrading(data) {
   // Aggiorna i test (struttura verifiche, sezioni, pesi)
-  if (Array.isArray(data.tests) && data.tests.length > 0) {
-    state.tests = data.tests;
+  // Firebase: array vuoti → null, array → oggetto {"0":{...}} se le chiavi non sono tutte int consecutivi
+  const rawTests = Array.isArray(data.tests)
+    ? data.tests
+    : (data.tests && typeof data.tests === 'object' ? Object.values(data.tests) : []);
+  if (rawTests.length > 0) {
+    state.tests = rawTests.map(normalizeTestFromFirebase);
     state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
   }
 
