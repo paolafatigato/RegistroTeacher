@@ -350,8 +350,8 @@ body {
 
 /* + Section bar column */
 .add-section-col-th {
-  width: 80px;
-  min-width: 80px;
+  width: 42px; /* narrower column */
+  min-width: 42px;
   padding: 0;
   position: relative;   /* needed for absolute child */
   background: var(--glaucous);
@@ -376,11 +376,12 @@ body {
   border: none;
   font-weight: 700;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   border-radius: 6px;
   writing-mode: vertical-rl;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   transition: background 0.2s, transform 0.1s;
+  padding: 0 2px;
 }
 
 .btn-add-section-bar:hover {
