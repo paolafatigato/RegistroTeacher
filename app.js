@@ -139,6 +139,7 @@ const testVersionSelect = document.getElementById("testVersionSelect");
 const exportBtn = document.getElementById("exportBtn");
 const gradeTable = document.getElementById("gradeTable");
 const warningArea = document.getElementById("warningArea");
+const facilitatedActionArea = document.getElementById("facilitatedActionArea");
 
 const configTestSelect = document.getElementById("configTestSelect");
 const testTitleInput = document.getElementById("testTitle");
@@ -1332,8 +1333,27 @@ function renderTestTable() {
 
   // Applica la classe CSS per la versione facilitata
   gradeTable.classList.remove("facilitata-version");
-  if (state.selectedTestVersionId === facilitatedVersionId) {
+  const isViewingFacilitatedVersion = state.selectedTestVersionId === facilitatedVersionId;
+  if (isViewingFacilitatedVersion) {
     gradeTable.classList.add("facilitata-version");
+  }
+
+  // Mostra/nascondi il bottone "Copia struttura da Standard"
+  if (facilitatedActionArea) {
+    facilitatedActionArea.innerHTML = "";
+    if (isViewingFacilitatedVersion && defaultVersion && activeVersion && activeVersion.id !== defaultVersion.id) {
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "btn btn-secondary btn-copy-from-standard";
+      copyBtn.textContent = "📋 Copia sezioni/pesi/max dalla versione Standard";
+      copyBtn.title = "Sovrascrive la struttura (sezioni, sottosezioni, pesi e massimi) della versione Facilitata con quella della versione Standard. I voti non vengono toccati.";
+      copyBtn.addEventListener("click", () => {
+        if (!confirm("Copiare la struttura dalla versione Standard? Le sezioni, sottosezioni, pesi e massimi della versione Facilitata verranno sostituiti. I voti inseriti fin qui resteranno.")) return;
+        activeVersion.sections = cloneSections(defaultVersion.sections);
+        saveState();
+        renderTestTable();
+      });
+      facilitatedActionArea.appendChild(copyBtn);
+    }
   }
 
   const thead = document.createElement("thead");
@@ -1530,6 +1550,7 @@ function renderTestTable() {
 
   const tbody = document.createElement("tbody");
   const warnings = [];
+  const facilitatedVersionObj = getVersionById(selectedTest, facilitatedVersionId);
 
   students.forEach((student) => {
     const row = document.createElement("tr");
@@ -1701,9 +1722,31 @@ function renderTestTable() {
 
     const finalCell = document.createElement("td");
     finalCell.classList.add("final-cell");
-    const finalScore = getFinalScore(student, selectedTest, activeVersion);
-    finalCell.textContent = formatScore(finalScore);
-    if (isLowGrade(finalScore)) {
+
+    // Cross-version: DSA student on standard page → grey facilitated score;
+    //                non-DSA student on facilitated page → grey standard score
+    let scoreToShow, isCrossVersion;
+    if (isViewingFacilitatedVersion) {
+      if (isFacilitated) {
+        scoreToShow = getFinalScore(student, selectedTest, activeVersion);
+        isCrossVersion = false;
+      } else {
+        scoreToShow = getFinalScore(student, selectedTest, defaultVersion);
+        isCrossVersion = true;
+      }
+    } else {
+      if (isFacilitated) {
+        scoreToShow = getFinalScore(student, selectedTest, facilitatedVersionObj);
+        isCrossVersion = true;
+      } else {
+        scoreToShow = getFinalScore(student, selectedTest, activeVersion);
+        isCrossVersion = false;
+      }
+    }
+    finalCell.textContent = formatScore(scoreToShow);
+    if (isCrossVersion) {
+      finalCell.classList.add("cross-version-score");
+    } else if (isLowGrade(scoreToShow)) {
       finalCell.classList.add("low-grade");
     }
     row.appendChild(finalCell);

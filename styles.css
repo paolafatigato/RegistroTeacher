@@ -570,6 +570,23 @@ body {
   font-weight: 700;
 }
 
+.grade-table td.final-cell.cross-version-score {
+  color: #aaaaaa;
+  font-style: italic;
+  font-weight: 400;
+}
+
+#facilitatedActionArea {
+  margin-bottom: 10px;
+}
+
+.btn-copy-from-standard {
+  background: #f5d0e8;
+  border: 1.5px dashed #E85D9D;
+  color: #7a1a50;
+  font-size: 13px;
+}
+
 .low-grade {
   color: var(--flame-orange);
   font-weight: 700;
