@@ -1344,12 +1344,14 @@ function renderTestTable() {
 
   const studentHeader = document.createElement("th");
   studentHeader.textContent = "Studente";
+  studentHeader.classList.add("student-col");
   studentHeader.rowSpan = 4;
   headerRow.appendChild(studentHeader);
 
   const versionHeader = document.createElement("th");
   versionHeader.innerHTML = "DSA<br><small style='font-weight:400;font-size:10px'>/ 104</small>";
   versionHeader.title = "Spunta per assegnare automaticamente la versione facilitata a questo studente in tutte le verifiche";
+  versionHeader.classList.add("dsa-col");
   versionHeader.rowSpan = 4;
   headerRow.appendChild(versionHeader);
 
@@ -1361,7 +1363,7 @@ function renderTestTable() {
     }
     if (section.subsections.length === 0) {
       section.subsections.push(
-        createSubsection({ weight: section.weight, max: section.max })
+        createSubsection({ weight: section.weight, max: section.max }, `${section.name}1`)
       );
       saveState();
     }
@@ -1385,9 +1387,11 @@ function renderTestTable() {
     addColumnBtn.type = "button";
     addColumnBtn.classList.add("btn", "btn-secondary", "btn-small");
     addColumnBtn.textContent = "+";
+    addColumnBtn.title = "Aggiungi sottosezione";
     addColumnBtn.addEventListener("click", () => {
+      const nextSubName = `${section.name}${section.subsections.length + 1}`;
       const lastSubsection = section.subsections[section.subsections.length - 1];
-      section.subsections.push(createSubsection(lastSubsection));
+      section.subsections.push(createSubsection(lastSubsection, nextSubName));
       saveState();
       renderTestTable();
     });
@@ -1454,7 +1458,7 @@ function renderTestTable() {
       }
       const weightInput = document.createElement("input");
       weightInput.type = "number";
-      weightInput.step = "0.1";
+      weightInput.step = "1";
       weightInput.min = "0";
       weightInput.value = getSubsectionWeight(subsection);
       weightInput.addEventListener("change", (event) => {
@@ -1489,24 +1493,30 @@ function renderTestTable() {
     });
   });
 
-  const finalHeader = document.createElement("th");
-  const finalHeaderWrap = document.createElement("div");
-  finalHeaderWrap.classList.add("section-header-cell");
-  const addSectionBtn = document.createElement("button");
-  addSectionBtn.type = "button";
-  addSectionBtn.classList.add("btn", "btn-add-section");
-  addSectionBtn.textContent = "+ Section";
-  addSectionBtn.addEventListener("click", () => {
-    if (!activeVersion) {
-      return;
-    }
-    activeVersion.sections.push(createSection());
+  // Dedicated "+ Section" column between last section and FINAL
+  const addSectionColTh = document.createElement("th");
+  addSectionColTh.classList.add("add-section-col-th");
+  addSectionColTh.rowSpan = 4;
+  const addSectionBarBtn = document.createElement("button");
+  addSectionBarBtn.type = "button";
+  addSectionBarBtn.classList.add("btn-add-section-bar");
+  addSectionBarBtn.textContent = "+ Section";
+  addSectionBarBtn.addEventListener("click", () => {
+    if (!activeVersion) return;
+    const nextLetter = String.fromCharCode(65 + activeVersion.sections.length);
+    activeVersion.sections.push(createSection(nextLetter));
     saveState();
     renderTestTable();
   });
+  addSectionColTh.appendChild(addSectionBarBtn);
+  headerRow.appendChild(addSectionColTh);
+
+  const finalHeader = document.createElement("th");
+  finalHeader.classList.add("final-col");
+  const finalHeaderWrap = document.createElement("div");
+  finalHeaderWrap.classList.add("section-header-cell");
   const finalLabel = document.createElement("span");
   finalLabel.textContent = "FINAL";
-  finalHeaderWrap.appendChild(addSectionBtn);
   finalHeaderWrap.appendChild(finalLabel);
   finalHeader.appendChild(finalHeaderWrap);
   finalHeader.rowSpan = 4;
@@ -1569,6 +1579,7 @@ function renderTestTable() {
     row.appendChild(studentCell);
 
     const versionCell = document.createElement("td");
+    versionCell.classList.add("dsa-cell");
     versionCell.style.textAlign = "center";
     const versionToggle = document.createElement("input");
     versionToggle.type = "checkbox";
@@ -1682,6 +1693,11 @@ function renderTestTable() {
         );
       }
     });
+
+    // Placeholder cell matching the + Section header column
+    const addSectionPlaceholderTd = document.createElement("td");
+    addSectionPlaceholderTd.classList.add("add-section-col-td");
+    row.appendChild(addSectionPlaceholderTd);
 
     const finalCell = document.createElement("td");
     finalCell.classList.add("final-cell");
@@ -2242,22 +2258,22 @@ function cloneSections(sections) {
   }));
 }
 
-function createSection() {
+function createSection(letter = "A") {
   return {
     id: createId("sec"),
-    name: "New Section",
+    name: letter,
     weight: 1,
     max: 10,
-    subsections: [createSubsection()],
+    subsections: [createSubsection(null, `${letter}1`)],
   };
 }
 
-function createSubsection(base = null) {
+function createSubsection(base = null, name = null) {
   return {
     id: createId("sub"),
-    name: "New Subsection",
+    name: name ?? "Sub",
     weight: parseNumber(base?.weight) ?? 1,
-    max: parseNumber(base?.max) ?? 1,
+    max: parseNumber(base?.max) ?? 10,
   };
 }
 
@@ -2321,12 +2337,12 @@ function createTest(title, subject, category) {
   const baseVersion = {
     id: standardVersionId,
     name: "Standard",
-    sections: [],
+    sections: [createSection("A")],
   };
   const facilitatedVersion = {
     id: facilitatedVersionId,
     name: "Facilitata",
-    sections: [],
+    sections: [createSection("A")],
   };
   return {
     id: createId("test"),

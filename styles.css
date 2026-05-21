@@ -249,6 +249,17 @@ body {
   min-width: 920px;
 }
 
+/* Fixed-width student column */
+.grade-table th.student-col,
+.grade-table td.student-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .grade-table th,
 .grade-table td {
   border: 1px solid #e0e0e0;
@@ -329,6 +340,65 @@ body {
 .btn-add-section:hover {
   transform: translateY(-1px);
   background: #8bd3ff;
+}
+
+/* Constrain thead row heights — prevents rowspan height explosion */
+.grade-table thead th {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+/* + Section bar column */
+.add-section-col-th {
+  width: 80px;
+  min-width: 80px;
+  padding: 0;
+  position: relative;   /* needed for absolute child */
+  background: var(--glaucous);
+}
+
+.grade-table th.final-col,
+.grade-table td.final-cell {
+  width: 80px;
+  min-width: 80px;
+}
+
+.btn-add-section-bar {
+  /* position:absolute takes the button out of the layout flow,
+     breaking the circular height dependency with rowspan */
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #6ec6ff;
+  color: #0b2c4a;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 6px;
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btn-add-section-bar:hover {
+  background: #8bd3ff;
+  transform: scale(1.03);
+}
+
+.add-section-col-td {
+  padding: 0;
+  background: rgba(110, 198, 255, 0.08) !important;
+}
+
+/* Narrow DSA column — shrinks to content width */
+.grade-table th.dsa-col,
+.grade-table td.dsa-cell {
+  width: 1%;
+  white-space: nowrap;
+  padding: 4px 6px;
 }
 
 .subheader-cell {
