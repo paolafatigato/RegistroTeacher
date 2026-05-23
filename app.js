@@ -241,12 +241,17 @@ function init() {
 
   testClassSelect.addEventListener("change", (event) => {
     state.selectedClassId = event.target.value;
+    // Se il test corrente non è assegnato alla nuova classe, passa all'ultimo test della classe
+    ensureTestMatchesClass();
+    ensureVersionSelections();
     saveState();
     renderTestTable();
   });
 
   testSelect.addEventListener("change", (event) => {
     state.selectedTestId = event.target.value;
+    // Se la classe corrente non è assegnata al nuovo test, passa alla prima classe del test
+    ensureClassMatchesTest();
     ensureVersionSelections();
     saveState();
     renderTestTable();
@@ -3192,6 +3197,43 @@ function ensureTestState() {
     state.selectedTestId = state.tests[0]?.id ?? null;
   }
   ensureVersionSelections();
+  // Assicura che la classe selezionata abbia questa verifica assegnata
+  ensureClassMatchesTest();
+}
+
+/**
+ * Se la classe selezionata non è tra quelle a cui la verifica è assegnata,
+ * passa automaticamente alla prima classe valida per quella verifica.
+ * Non fa nulla se il test non ha classIds (backward compat).
+ */
+function ensureClassMatchesTest() {
+  const test = getSelectedTest();
+  if (!test || !Array.isArray(test.classIds) || test.classIds.length === 0) return;
+  if (test.classIds.includes(state.selectedClassId)) return;
+  // Trova la prima classe valida presente nello stato
+  const firstValid = state.classes.find(c => test.classIds.includes(c.id));
+  if (firstValid) {
+    state.selectedClassId = firstValid.id;
+  }
+}
+
+/**
+ * Se il test selezionato non è assegnato alla classe corrente,
+ * passa all'ultimo test assegnato a quella classe.
+ * Non fa nulla se nessun test è assegnato alla classe.
+ */
+function ensureTestMatchesClass() {
+  const classId = state.selectedClassId;
+  const currentTest = getSelectedTest();
+  // Se il test corrente include già la classe, va bene
+  if (currentTest && (currentTest.classIds || []).includes(classId)) return;
+  // Cerca l'ultimo test (in ordine array inverso) che include questa classe
+  const testsForClass = [...state.tests].reverse().filter(
+    t => Array.isArray(t.classIds) && t.classIds.includes(classId)
+  );
+  if (testsForClass.length > 0) {
+    state.selectedTestId = testsForClass[0].id;
+  }
 }
 
 function generateClassName() {
