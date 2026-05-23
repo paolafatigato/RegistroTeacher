@@ -984,11 +984,16 @@ function renderTestsList() {
     info.style.color = "#888";
     card.appendChild(info);
 
-    // ── Pannello "Modifica dettagli" ──────────────────────────────────────
+    // Spacer per spingere i controlli in basso nella card
+    const spacer = document.createElement("div");
+    spacer.style.flex = "1";
+    card.appendChild(spacer);
+
+    // ── Pannello "Modifica" (toggle) ──────────────────────────────────────
     const detailsToggle = document.createElement("button");
     detailsToggle.className = "btn btn-secondary btn-small";
-    detailsToggle.style.cssText = "margin-top:8px;font-size:.8em;";
-    detailsToggle.textContent = "✏️ Modifica dettagli";
+    detailsToggle.style.cssText = "font-size:.8em;";
+    detailsToggle.textContent = "✏️ Modifica";
 
     const detailsPanel = document.createElement("div");
     detailsPanel.className = "test-details-panel";
@@ -1143,16 +1148,18 @@ function renderTestsList() {
     detailsToggle.addEventListener("click", () => {
       const open = detailsPanel.style.display === "block";
       detailsPanel.style.display = open ? "none" : "block";
-      detailsToggle.textContent = open ? "✏️ Modifica dettagli" : "▲ Chiudi";
+      detailsToggle.textContent = open ? "✏️ Modifica" : "▲ Chiudi";
     });
 
-    card.appendChild(detailsToggle);
     card.appendChild(detailsPanel);
 
     // ── Azioni principali ─────────────────────────────────────────────────
     const actions = document.createElement("div");
     actions.classList.add("panel-actions");
     actions.style.marginTop = "10px";
+
+    // Aggiungi il toggle Modifica qui in modo che stia sulla stessa riga di Valuta
+    actions.appendChild(detailsToggle);
 
     const evalBtn = document.createElement("button");
     evalBtn.classList.add("btn", "btn-secondary");

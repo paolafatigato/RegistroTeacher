@@ -103,6 +103,25 @@ body {
   margin-bottom: 16px;
 }
 
+/* Uniforma bottoni all'interno della card: stessa forma, padding e margini */
+.card .panel-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 8px;
+  margin-bottom: 0;
+}
+.card .panel-actions .btn {
+  padding: 8px 14px;
+  border-radius: 12px;
+  margin: 0;
+  font-size: 0.95em;
+}
+.card .panel-actions .btn + .btn {
+  margin-left: 8px;
+}
+
   .btn-classroom {
     background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
     color: #fff;
