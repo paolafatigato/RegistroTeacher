@@ -804,6 +804,16 @@ body {
   gap: 8px;
 }
 
+.paste-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #6b7280;
+  background: rgba(99, 102, 241, 0.07);
+  border-left: 3px solid #818cf8;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
 .warning {
   background: rgba(254, 80, 7, 0.12);
   border-left: 4px solid var(--flame-orange);

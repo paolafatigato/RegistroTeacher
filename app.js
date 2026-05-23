@@ -2322,6 +2322,39 @@ function createScoreInput(
     }
   });
 
+  // Incolla colonna da Excel: se il testo incollato contiene più righe,
+  // distribuisce i valori verso il basso nella stessa colonna
+  input.addEventListener("paste", (event) => {
+    const text = (event.clipboardData || window.clipboardData).getData("text");
+    const lines = text.split(/\r?\n/).map((v) => v.trim()).filter((v) => v !== "");
+    if (lines.length <= 1) return; // Incolla normale per un solo valore
+
+    event.preventDefault();
+
+    const cell = input.closest("td");
+    const row = cell.closest("tr");
+    const cellIndex = Array.from(row.children).indexOf(cell);
+    const tbody = row.closest("tbody");
+    if (!tbody) return;
+    const rows = Array.from(tbody.children);
+    const startRowIdx = rows.indexOf(row);
+
+    lines.forEach((val, i) => {
+      const targetRow = rows[startRowIdx + i];
+      if (!targetRow) return;
+      const targetCell = targetRow.children[cellIndex];
+      if (!targetCell) return;
+      const targetInput = targetCell.querySelector("input[type='number']");
+      if (!targetInput || targetInput.disabled) return;
+      // Sostituisce la virgola con il punto (separatore decimale italiano)
+      targetInput.value = val.replace(",", ".");
+      targetInput.dispatchEvent(new Event("input", { bubbles: false }));
+    });
+
+    saveState();
+    renderTestTable();
+  });
+
   // Inizializza la multi-selezione per questo input
   initializeInputSelection(input);
 
