@@ -1343,3 +1343,40 @@ body {
   display: flex;
   justify-content: flex-end;
 }
+
+/* ── Nuova verifica: lista classi ── */
+.new-test-classes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+label.new-test-class-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: #faf5ff;
+  border: 1px solid #e8d5f0;
+  cursor: pointer;
+  font-size: .9rem;
+  transition: background .12s;
+}
+
+label.new-test-class-row:hover { background: #f0e6fa; }
+
+label.new-test-class-row input[type="checkbox"] {
+  accent-color: #9b59b6;
+  width: 15px;
+  height: 15px;
+}
+
+.field-error {
+  font-size: .82rem;
+  color: #c0392b;
+  margin: 4px 0 0;
+}

@@ -108,6 +108,11 @@
           <input id="newTestCategoryInput" name="newTestCategoryInput" type="text" placeholder="Categoria" list="categoriesSuggestions" autocomplete="off" />
           <datalist id="categoriesSuggestions"></datalist>
         </div>
+        <div class="field">
+          <label>Classi <small style="font-weight:400;color:#c0392b;">*obbligatorio</small></label>
+          <div id="newTestClassesField" class="new-test-classes-list"></div>
+          <p id="newTestClassError" class="field-error" style="display:none;">Seleziona almeno una classe.</p>
+        </div>
         <menu>
           <button id="cancelNewTestBtn" type="reset">Annulla</button>
           <button id="confirmNewTestBtn" type="submit" class="btn btn-primary">Crea</button>

@@ -352,6 +352,35 @@ function init() {
     const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
     if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
     refreshSuggestions();
+    // Popola i checkbox delle classi
+    const classesField = document.getElementById("newTestClassesField");
+    if (classesField) {
+      classesField.innerHTML = "";
+      if (state.classes.length === 0) {
+        classesField.innerHTML = '<p style="color:#888;font-size:.85em;">Nessuna classe disponibile — aggiungine una prima.</p>';
+      } else {
+        state.classes.forEach(cls => {
+          const lbl = document.createElement("label");
+          lbl.className = "new-test-class-row";
+          const chk = document.createElement("input");
+          chk.type = "checkbox";
+          chk.name = "newTestClass";
+          chk.value = cls.id;
+          chk.dataset.classId = cls.id;
+          const clsColor = state.settings?.classColors?.[cls.id];
+          if (clsColor) {
+            lbl.style.borderLeft = `3px solid ${clsColor}`;
+            lbl.style.paddingLeft = "8px";
+          }
+          const nameSp = document.createElement("span");
+          nameSp.textContent = cls.name;
+          lbl.appendChild(chk);
+          lbl.appendChild(nameSp);
+          classesField.appendChild(lbl);
+        });
+      }
+    }
+    document.getElementById("newTestClassError").style.display = "none";
     newTestDialog.showModal();
   });
 
@@ -395,7 +424,16 @@ function init() {
       const subject = newTestSubjectInput.value.trim();
       const newTestCategoryInput = document.getElementById("newTestCategoryInput");
       const category = newTestCategoryInput ? newTestCategoryInput.value.trim() : "";
+      // Valida classi: almeno una richiesta
+      const checkedClasses = Array.from(
+        document.querySelectorAll('#newTestClassesField input[type="checkbox"]:checked')
+      ).map(cb => cb.value);
+      if (checkedClasses.length === 0) {
+        document.getElementById("newTestClassError").style.display = "";
+        return;
+      }
       const newTest = createTest(name, subject, category);
+      newTest.classIds = checkedClasses;
       state.tests.push(newTest);
       state.selectedTestId = newTest.id;
       state.selectedTestVersionId = newTest.versions[0]?.id ?? null;
@@ -1246,21 +1284,17 @@ function renderSettingsDialog() {
   }
 
   const doAddSubject = () => {
-    const val = newSubjectInput.value.trim();
+    const inp = document.getElementById("newSubjectInput");
+    const val = inp.value.trim();
     if (!val || state.settings.subjects.includes(val)) return;
     state.settings.subjects.push(val);
-    newSubjectInput.value = "";
+    inp.value = "";
     saveState();
     renderSubjectsList();
     refreshSuggestions();
   };
-  // Remove old listeners by cloning
-  const newSubjectInputClone = newSubjectInput.cloneNode(true);
-  newSubjectInput.replaceWith(newSubjectInputClone);
-  const addSubjectBtnClone = addSubjectBtn.cloneNode(true);
-  addSubjectBtn.replaceWith(addSubjectBtnClone);
-  document.getElementById("newSubjectInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddSubject(); } });
-  document.getElementById("addSubjectBtn").addEventListener("click", doAddSubject);
+  document.getElementById("newSubjectInput").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); doAddSubject(); } };
+  document.getElementById("addSubjectBtn").onclick = doAddSubject;
   renderSubjectsList();
 
   // ── Categorie ─────────────────────────────────────────────
@@ -1292,20 +1326,17 @@ function renderSettingsDialog() {
   }
 
   const doAddCategory = () => {
-    const val = newCategoryInput.value.trim();
+    const inp = document.getElementById("newCategoryInput");
+    const val = inp.value.trim();
     if (!val || state.settings.categories.includes(val)) return;
     state.settings.categories.push(val);
-    newCategoryInput.value = "";
+    inp.value = "";
     saveState();
     renderCategoriesList();
     refreshSuggestions();
   };
-  const newCategoryInputClone = newCategoryInput.cloneNode(true);
-  newCategoryInput.replaceWith(newCategoryInputClone);
-  const addCategoryBtnClone = addCategoryBtn.cloneNode(true);
-  addCategoryBtn.replaceWith(addCategoryBtnClone);
-  document.getElementById("newCategoryInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } });
-  document.getElementById("addCategoryBtn").addEventListener("click", doAddCategory);
+  document.getElementById("newCategoryInput").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } };
+  document.getElementById("addCategoryBtn").onclick = doAddCategory;
   renderCategoriesList();
 
   // ── Colori classi ─────────────────────────────────────────
