@@ -55,6 +55,11 @@ const STORAGE_KEY = "teacher-grading-data-v1";
 // lo stato partirà con classes = [].
 const defaultData = {
   classes: [],
+  settings: {
+    subjects: [],    // array di stringhe – materie salvate
+    categories: [],  // array di stringhe – categorie salvate
+    classColors: {}, // { classId: "#hexcolor" }
+  },
   tests: [
     {
       id: "test-1",
@@ -344,11 +349,42 @@ function init() {
   addTestBtn.addEventListener("click", () => {
     newTestNameInput.value = "";
     newTestSubjectInput.value = "";
+    const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
+    if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
+    refreshSuggestions();
     newTestDialog.showModal();
   });
 
   cancelNewTestBtn.addEventListener("click", () => {
     newTestDialog.close();
+  });
+
+  // ── Settings dialog ──────────────────────────────────────────────────────
+  const testsSettingsBtn    = document.getElementById("testsSettingsBtn");
+  const testsSettingsDialog = document.getElementById("testsSettingsDialog");
+  const closeSettingsBtn    = document.getElementById("closeSettingsBtn");
+
+  if (testsSettingsBtn && testsSettingsDialog) {
+    testsSettingsBtn.addEventListener("click", () => {
+      renderSettingsDialog();
+      testsSettingsDialog.showModal();
+    });
+  }
+
+  if (closeSettingsBtn) {
+    closeSettingsBtn.addEventListener("click", () => testsSettingsDialog.close());
+  }
+
+  // Tab switching inside settings dialog
+  testsSettingsDialog?.querySelectorAll(".settings-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      testsSettingsDialog.querySelectorAll(".settings-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      const target = tab.dataset.tab;
+      testsSettingsDialog.querySelector("#settingsTabSubjects").style.display    = target === "subjects"    ? "" : "none";
+      testsSettingsDialog.querySelector("#settingsTabCategories").style.display  = target === "categories"  ? "" : "none";
+      testsSettingsDialog.querySelector("#settingsTabClassColors").style.display = target === "classcolors" ? "" : "none";
+    });
   });
 
   // Gestione submit del form per nuova verifica (era erroneamente dentro createTest)
@@ -452,27 +488,48 @@ function init() {
 
   commentSaveBtn.addEventListener("click", () => {
     if (!commentModalContext) return;
-    const { student, testId, sectionId, subsectionId, trigger } = commentModalContext;
-    const key = subsectionId ?? "direct";
-    ensureScoreStore(student, testId, sectionId);
-    if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
+    const { trigger } = commentModalContext;
     const text = commentTextarea.value.trim();
-    student.scores[testId][sectionId].comments[key] = text || null;
+    if (commentModalContext.type === "header") {
+      const { obj, key } = commentModalContext;
+      obj[key] = text || null;
+    } else {
+      const { student, testId, sectionId, subsectionId } = commentModalContext;
+      const key = subsectionId ?? "direct";
+      ensureScoreStore(student, testId, sectionId);
+      if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
+      student.scores[testId][sectionId].comments[key] = text || null;
+    }
     trigger.classList.toggle("has-comment", Boolean(text));
     trigger.title = text || "Aggiungi commento";
+    // If this is a header trigger, also mark the TH so we can style the whole cell
+    if (commentModalContext.type === "header") {
+      const th = trigger.closest("th");
+      if (th) th.classList.toggle("has-header-comment", Boolean(text));
+    }
     saveState();
     commentDialog.close();
   });
 
   commentDeleteBtn.addEventListener("click", () => {
     if (!commentModalContext) return;
-    const { student, testId, sectionId, subsectionId, trigger } = commentModalContext;
-    const key = subsectionId ?? "direct";
-    if (student.scores?.[testId]?.[sectionId]?.comments) {
-      student.scores[testId][sectionId].comments[key] = null;
+    const { trigger } = commentModalContext;
+    if (commentModalContext.type === "header") {
+      const { obj, key } = commentModalContext;
+      obj[key] = null;
+    } else {
+      const { student, testId, sectionId, subsectionId } = commentModalContext;
+      const key = subsectionId ?? "direct";
+      if (student.scores?.[testId]?.[sectionId]?.comments) {
+        student.scores[testId][sectionId].comments[key] = null;
+      }
     }
     trigger.classList.remove("has-comment");
     trigger.title = "Aggiungi commento";
+    if (commentModalContext.type === "header") {
+      const th = trigger.closest("th");
+      if (th) th.classList.remove("has-header-comment");
+    }
     saveState();
     commentDialog.close();
   });
@@ -501,6 +558,7 @@ function init() {
   });
 
   render();
+  refreshSuggestions();
 }
 
 function render() {
@@ -816,6 +874,24 @@ function renderTestsList() {
     const card = document.createElement("div");
     card.classList.add("card");
 
+    // ── Striscia colori classi in cima alla card ──────────────────────────
+    const classColors = (test.classIds || [])
+      .map(cid => state.settings?.classColors?.[cid])
+      .filter(Boolean);
+    if (classColors.length === 1) {
+      card.style.borderTop = `5px solid ${classColors[0]}`;
+    } else if (classColors.length > 1) {
+      const segments = classColors.map((c, i) => {
+        const pct = 100 / classColors.length;
+        return `${c} ${i * pct}% ${(i + 1) * pct}%`;
+      });
+      card.style.borderTop = "5px solid transparent";
+      card.style.backgroundImage = `linear-gradient(90deg, ${segments.join(", ")})`;
+      card.style.backgroundSize = "100% 5px";
+      card.style.backgroundRepeat = "no-repeat";
+      card.style.backgroundPosition = "0 0";
+    }
+
     // Titolo (read-only, modificabile nel pannello)
     const titleEl = document.createElement("h3");
     titleEl.textContent = test.title || "Verifica";
@@ -849,6 +925,11 @@ function renderTestsList() {
         const date = test.classDates[cid] || "";
         const chip = document.createElement("span");
         chip.className = "class-date-chip";
+        const clsColor = state.settings?.classColors?.[cid];
+        if (clsColor) {
+          chip.style.background = clsColor + "33"; // 20% opacity
+          chip.style.borderLeft = `3px solid ${clsColor}`;
+        }
         chip.textContent = cls.name + (date ? " · " + date : "");
         classRow.appendChild(chip);
       });
@@ -1126,6 +1207,204 @@ function renderConfig() {
   );
   versionNameInput.value = activeVersion?.name || "";
   renderSections(activeVersion);
+}
+
+// ============================================================
+//  SETTINGS DIALOG
+// ============================================================
+function renderSettingsDialog() {
+  if (!state.settings) {
+    state.settings = { subjects: [], categories: [], classColors: {} };
+  }
+
+  // ── Materie ──────────────────────────────────────────────
+  const subjectsList = document.getElementById("subjectsList");
+  const newSubjectInput = document.getElementById("newSubjectInput");
+  const addSubjectBtn = document.getElementById("addSubjectBtn");
+
+  function renderSubjectsList() {
+    subjectsList.innerHTML = "";
+    state.settings.subjects.forEach((s, i) => {
+      const li = document.createElement("li");
+      li.className = "settings-list-item";
+      const span = document.createElement("span");
+      span.textContent = s;
+      const del = document.createElement("button");
+      del.className = "icon-btn settings-list-remove";
+      del.textContent = "×";
+      del.title = "Rimuovi";
+      del.addEventListener("click", () => {
+        state.settings.subjects.splice(i, 1);
+        saveState();
+        renderSubjectsList();
+        refreshSuggestions();
+      });
+      li.appendChild(span);
+      li.appendChild(del);
+      subjectsList.appendChild(li);
+    });
+  }
+
+  const doAddSubject = () => {
+    const val = newSubjectInput.value.trim();
+    if (!val || state.settings.subjects.includes(val)) return;
+    state.settings.subjects.push(val);
+    newSubjectInput.value = "";
+    saveState();
+    renderSubjectsList();
+    refreshSuggestions();
+  };
+  // Remove old listeners by cloning
+  const newSubjectInputClone = newSubjectInput.cloneNode(true);
+  newSubjectInput.replaceWith(newSubjectInputClone);
+  const addSubjectBtnClone = addSubjectBtn.cloneNode(true);
+  addSubjectBtn.replaceWith(addSubjectBtnClone);
+  document.getElementById("newSubjectInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddSubject(); } });
+  document.getElementById("addSubjectBtn").addEventListener("click", doAddSubject);
+  renderSubjectsList();
+
+  // ── Categorie ─────────────────────────────────────────────
+  const categoriesList = document.getElementById("categoriesList");
+  const newCategoryInput = document.getElementById("newCategoryInput");
+  const addCategoryBtn = document.getElementById("addCategoryBtn");
+
+  function renderCategoriesList() {
+    categoriesList.innerHTML = "";
+    state.settings.categories.forEach((c, i) => {
+      const li = document.createElement("li");
+      li.className = "settings-list-item";
+      const span = document.createElement("span");
+      span.textContent = c;
+      const del = document.createElement("button");
+      del.className = "icon-btn settings-list-remove";
+      del.textContent = "×";
+      del.title = "Rimuovi";
+      del.addEventListener("click", () => {
+        state.settings.categories.splice(i, 1);
+        saveState();
+        renderCategoriesList();
+        refreshSuggestions();
+      });
+      li.appendChild(span);
+      li.appendChild(del);
+      categoriesList.appendChild(li);
+    });
+  }
+
+  const doAddCategory = () => {
+    const val = newCategoryInput.value.trim();
+    if (!val || state.settings.categories.includes(val)) return;
+    state.settings.categories.push(val);
+    newCategoryInput.value = "";
+    saveState();
+    renderCategoriesList();
+    refreshSuggestions();
+  };
+  const newCategoryInputClone = newCategoryInput.cloneNode(true);
+  newCategoryInput.replaceWith(newCategoryInputClone);
+  const addCategoryBtnClone = addCategoryBtn.cloneNode(true);
+  addCategoryBtn.replaceWith(addCategoryBtnClone);
+  document.getElementById("newCategoryInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } });
+  document.getElementById("addCategoryBtn").addEventListener("click", doAddCategory);
+  renderCategoriesList();
+
+  // ── Colori classi ─────────────────────────────────────────
+  const classColorsList = document.getElementById("classColorsList");
+  classColorsList.innerHTML = "";
+
+  const PALETTE = [
+    "#f08080","#f4a460","#ffd700","#98fb98","#87ceeb",
+    "#dda0dd","#ff69b4","#20b2aa","#6495ed","#ff7f50",
+    "#90ee90","#ba55d3","#40e0d0","#ff6347","#7b68ee",
+  ];
+
+  if (state.classes.length === 0) {
+    classColorsList.innerHTML = '<p style="color:#888;font-size:.9em;">Nessuna classe disponibile. Aggiungine una dalla sezione Classi.</p>';
+  } else {
+    state.classes.forEach(cls => {
+      const row = document.createElement("div");
+      row.className = "class-color-row";
+
+      const label = document.createElement("span");
+      label.className = "class-color-label";
+      label.textContent = cls.name || "Classe";
+      row.appendChild(label);
+
+      const swatches = document.createElement("div");
+      swatches.className = "class-color-swatches";
+
+      PALETTE.forEach(color => {
+        const sw = document.createElement("button");
+        sw.type = "button";
+        sw.className = "color-swatch";
+        sw.style.background = color;
+        sw.title = color;
+        if ((state.settings.classColors[cls.id] || "").toLowerCase() === color.toLowerCase()) {
+          sw.classList.add("selected");
+        }
+        sw.addEventListener("click", () => {
+          state.settings.classColors[cls.id] = color;
+          saveState();
+          // Re-render solo i swatches di questa classe
+          swatches.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
+          sw.classList.add("selected");
+          colorPreview.style.background = color;
+          renderTestsList(); // aggiorna subito i colori nelle card
+        });
+        swatches.appendChild(sw);
+      });
+
+      // Custom color picker
+      const customInput = document.createElement("input");
+      customInput.type = "color";
+      customInput.className = "color-custom-input";
+      customInput.title = "Colore personalizzato";
+      customInput.value = state.settings.classColors[cls.id] || "#cccccc";
+      customInput.addEventListener("input", (e) => {
+        state.settings.classColors[cls.id] = e.target.value;
+        swatches.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
+        colorPreview.style.background = e.target.value;
+        saveState();
+        renderTestsList();
+      });
+      swatches.appendChild(customInput);
+
+      row.appendChild(swatches);
+
+      // Preview chip
+      const colorPreview = document.createElement("div");
+      colorPreview.className = "class-color-preview";
+      colorPreview.style.background = state.settings.classColors[cls.id] || "transparent";
+      colorPreview.title = cls.name;
+      colorPreview.textContent = cls.name?.[0] ?? "?";
+      row.appendChild(colorPreview);
+
+      classColorsList.appendChild(row);
+    });
+  }
+}
+
+/** Aggiorna i <datalist> nel dialog "Nuova verifica" con i dati da settings */
+function refreshSuggestions() {
+  const subjDl = document.getElementById("subjectsSuggestions");
+  const catDl  = document.getElementById("categoriesSuggestions");
+  if (!state.settings) return;
+  if (subjDl) {
+    subjDl.innerHTML = "";
+    state.settings.subjects.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      subjDl.appendChild(opt);
+    });
+  }
+  if (catDl) {
+    catDl.innerHTML = "";
+    state.settings.categories.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      catDl.appendChild(opt);
+    });
+  }
 }
 
 function renderSections(version) {
@@ -1406,6 +1685,7 @@ function renderTestTable() {
     const addColumnBtn = document.createElement("button");
     addColumnBtn.type = "button";
     addColumnBtn.classList.add("btn", "btn-secondary", "btn-small");
+    addColumnBtn.classList.add("section-add-btn");
     addColumnBtn.textContent = "+";
     addColumnBtn.title = "Aggiungi sottosezione";
     addColumnBtn.addEventListener("click", () => {
@@ -1420,6 +1700,7 @@ function renderTestTable() {
     const removeColumnBtn = document.createElement("button");
     removeColumnBtn.type = "button";
     removeColumnBtn.classList.add("btn", "btn-danger", "btn-small");
+    removeColumnBtn.classList.add("section-remove-btn");
     removeColumnBtn.textContent = "×";
     removeColumnBtn.title = "Elimina questa section e tutti i voti associati";
     removeColumnBtn.addEventListener("click", () => {
@@ -1433,6 +1714,7 @@ function renderTestTable() {
     headerWrap.appendChild(removeColumnBtn);
 
     th.appendChild(headerWrap);
+    attachHeaderCommentTrigger(th, section, "comment");
     headerRow.appendChild(th);
 
     section.subsections.forEach((subsection, subsectionIndex) => {
@@ -1469,6 +1751,7 @@ function renderTestTable() {
       subHeaderWrap.appendChild(removeBtn);
 
       subTh.appendChild(subHeaderWrap);
+      attachHeaderCommentTrigger(subTh, subsection, "comment");
       subHeaderRow.appendChild(subTh);
 
       const weightTh = document.createElement("th");
@@ -1487,6 +1770,7 @@ function renderTestTable() {
         renderTestTable();
       });
       weightTh.appendChild(weightInput);
+      attachHeaderCommentTrigger(weightTh, subsection, "weightComment");
       weightRow.appendChild(weightTh);
 
       const maxTh = document.createElement("th");
@@ -1509,6 +1793,7 @@ function renderTestTable() {
         renderTestTable();
       });
       maxTh.appendChild(maxInput);
+      attachHeaderCommentTrigger(maxTh, subsection, "maxComment");
       maxRow.appendChild(maxTh);
     });
   });
@@ -1516,7 +1801,7 @@ function renderTestTable() {
   // Dedicated "+ Section" column between last section and FINAL
   const addSectionColTh = document.createElement("th");
   addSectionColTh.classList.add("add-section-col-th");
-  addSectionColTh.rowSpan = 4;
+  addSectionColTh.rowSpan = 3;
   const addSectionBarBtn = document.createElement("button");
   addSectionBarBtn.type = "button";
   addSectionBarBtn.classList.add("btn-add-section-bar");
@@ -1539,8 +1824,37 @@ function renderTestTable() {
   finalLabel.textContent = "FINAL";
   finalHeaderWrap.appendChild(finalLabel);
   finalHeader.appendChild(finalHeaderWrap);
-  finalHeader.rowSpan = 4;
+  finalHeader.rowSpan = 3;
   headerRow.appendChild(finalHeader);
+
+  // Riga 4 (maxRow): aggiunge label per la colonna spunta e placeholder per FINAL
+  if (!selectedTest.checkboxLabel) selectedTest.checkboxLabel = "";
+  const checkLabelTh = document.createElement("th");
+  checkLabelTh.classList.add("subheader", "check-label-th");
+  const checkLabelInput = document.createElement("input");
+  checkLabelInput.type = "text";
+  checkLabelInput.value = selectedTest.checkboxLabel;
+  checkLabelInput.placeholder = "⌛";
+  checkLabelInput.addEventListener("input", (e) => {
+    const newLabel = e.target.value.trim();
+    gradeTable.querySelectorAll(".check-cell-wrapper input[type='checkbox']").forEach(cb => {
+      cb.title = newLabel;
+    });
+    gradeTable.querySelectorAll(".check-note-input").forEach(div => {
+      div.textContent = newLabel;
+    });
+  });
+  checkLabelInput.addEventListener("change", (e) => {
+    selectedTest.checkboxLabel = e.target.value.trim();
+    saveState();
+    renderTestTable();
+  });
+  checkLabelTh.appendChild(checkLabelInput);
+  maxRow.appendChild(checkLabelTh);
+
+  const finalMaxTh = document.createElement("th");
+  finalMaxTh.classList.add("subheader", "final-col");
+  maxRow.appendChild(finalMaxTh);
 
   thead.appendChild(headerRow);
   thead.appendChild(subHeaderRow);
@@ -1715,9 +2029,35 @@ function renderTestTable() {
       }
     });
 
-    // Placeholder cell matching the + Section header column
+    // Colonna spunta: checkbox per criteri binari (es. consegnato in tempo, ordinato…)
     const addSectionPlaceholderTd = document.createElement("td");
     addSectionPlaceholderTd.classList.add("add-section-col-td");
+
+    if (!student.checks) student.checks = {};
+    if (!student.checks[selectedTest.id]) {
+      student.checks[selectedTest.id] = { checked: false, note: "" };
+    }
+    const checkData = student.checks[selectedTest.id];
+
+    const checkWrapper = document.createElement("div");
+    checkWrapper.classList.add("check-cell-wrapper");
+
+    const checkboxEl = document.createElement("input");
+    checkboxEl.type = "checkbox";
+    checkboxEl.checked = Boolean(checkData.checked);
+    checkboxEl.title = selectedTest.checkboxLabel || "";
+    checkboxEl.addEventListener("change", (e) => {
+      checkData.checked = e.target.checked;
+      saveState();
+    });
+    checkWrapper.appendChild(checkboxEl);
+
+    const noteEl = document.createElement("div");
+    noteEl.classList.add("check-note-input");
+    noteEl.textContent = selectedTest.checkboxLabel || "";
+    checkWrapper.appendChild(noteEl);
+
+    addSectionPlaceholderTd.appendChild(checkWrapper);
     row.appendChild(addSectionPlaceholderTd);
 
     const finalCell = document.createElement("td");
@@ -1949,6 +2289,35 @@ function createScoreInput(
  * Aggiorna solo la cella FINAL della riga senza ricostruire tutto il DOM.
  * Chiamata durante la digitazione per mostrare il voto finale in tempo reale.
  */
+/**
+ * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella di intestazione
+ * (section, subsection, peso, punteggio massimo). Salva il commento su obj[key].
+ */
+function attachHeaderCommentTrigger(cell, obj, key) {
+  const existingComment = obj[key];
+
+  const trigger = document.createElement("div");
+  trigger.className = "comment-trigger";
+  if (existingComment) {
+    trigger.classList.add("has-comment");
+    trigger.title = existingComment;
+    // mark the TH so CSS can color the whole header cell
+    try { cell.classList.add("has-header-comment"); } catch (e) {}
+  } else {
+    trigger.title = "Aggiungi commento";
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    commentModalContext = { type: "header", obj, key, trigger };
+    document.getElementById("commentTextarea").value = obj[key] || "";
+    document.getElementById("commentDialog").showModal();
+    document.getElementById("commentTextarea").focus();
+  });
+
+  cell.appendChild(trigger);
+}
+
 /**
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella.
  */
@@ -2452,6 +2821,7 @@ function saveState() {
   // Salva preferenze UI e cache voti in localStorage (fallback offline)
   const dataToSave = {
     tests: state.tests,
+    settings: state.settings,
     selectedClassId: state.selectedClassId,
     selectedTestId: state.selectedTestId,
     selectedTestVersionId: state.selectedTestVersionId,
@@ -2460,6 +2830,7 @@ function saveState() {
     studentScores: buildStudentScoresMap(),
     studentTestVersions: buildStudentTestVersionsMap(),
     studentFacilitated: buildStudentFacilitatedMap(),
+    studentChecks: buildStudentChecksMap(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
 
@@ -2485,9 +2856,11 @@ function saveGradingToFirebase() {
   const path = `/users/${fbUser.uid}/grading`;
   const data = {
     tests: state.tests,
+    settings: state.settings,
     scores: buildStudentScoresMap(),
     facilitated: buildStudentFacilitatedMap(),
     testVersions: buildStudentTestVersionsMap(),
+    checks: buildStudentChecksMap(),
     savedAt: Date.now(),
   };
   fbDb.ref(path).set(data)
@@ -2534,6 +2907,19 @@ function buildStudentFacilitatedMap() {
     cls.students.forEach((student) => {
       if (student.facilitated === true) {
         map[student.id] = true;
+      }
+    });
+  });
+  return map;
+}
+
+/** Costruisce una mappa { studentId: { testId: { checked, note } } } per le spunte */
+function buildStudentChecksMap() {
+  const map = {};
+  state.classes.forEach((cls) => {
+    cls.students.forEach((student) => {
+      if (student.checks && Object.keys(student.checks).length > 0) {
+        map[student.id] = student.checks;
       }
     });
   });
@@ -2594,17 +2980,22 @@ function loadState() {
     const studentScores = parsed.studentScores ?? {};
     const studentTestVersions = parsed.studentTestVersions ?? {};
     const studentFacilitated = parsed.studentFacilitated ?? {};
+    const studentChecks = parsed.studentChecks ?? {};
 
     // Applica i dati salvati agli studenti già presenti (formato vecchio)
     classes.forEach((cls) => {
       cls.students.forEach((student) => {
         if (!student.scores) student.scores = {};
         if (!student.testVersions) student.testVersions = {};
+        if (!student.checks) student.checks = {};
         if (studentScores[student.id]) {
           Object.assign(student.scores, studentScores[student.id]);
         }
         if (studentTestVersions[student.id]) {
           Object.assign(student.testVersions, studentTestVersions[student.id]);
+        }
+        if (studentChecks[student.id]) {
+          Object.assign(student.checks, studentChecks[student.id]);
         }
         if (studentFacilitated[student.id]) {
           student.facilitated = true;
@@ -2614,6 +3005,11 @@ function loadState() {
 
     const data = {
       classes,
+      settings: {
+        subjects:    Array.isArray(parsed.settings?.subjects)    ? parsed.settings.subjects    : [],
+        categories:  Array.isArray(parsed.settings?.categories)  ? parsed.settings.categories  : [],
+        classColors: (parsed.settings?.classColors && typeof parsed.settings.classColors === 'object') ? parsed.settings.classColors : {},
+      },
       tests,
       selectedClassId,
       selectedTestId,
@@ -2624,6 +3020,7 @@ function loadState() {
       _studentScores: studentScores,
       _studentTestVersions: studentTestVersions,
       _studentFacilitated: studentFacilitated,
+      _studentChecks: studentChecks,
     };
 
     tests.forEach((testItem) => {
@@ -2973,6 +3370,7 @@ function applyFirebaseGrading(data) {
   state._studentScores = data.scores || {};
   state._studentTestVersions = data.testVersions || {};
   state._studentFacilitated = data.facilitated || {};
+  state._studentChecks = data.checks || {};
 
   // Applica subito agli studenti già caricati
   state.classes.forEach((cls) => {
@@ -2982,6 +3380,9 @@ function applyFirebaseGrading(data) {
       }
       if (state._studentTestVersions[student.id]) {
         student.testVersions = state._studentTestVersions[student.id];
+      }
+      if (state._studentChecks[student.id]) {
+        student.checks = state._studentChecks[student.id];
       }
       student.facilitated = state._studentFacilitated[student.id] === true;
     });
@@ -3002,6 +3403,7 @@ function mergeFirebaseClasses(fbData) {
   const studentScores = state._studentScores || buildStudentScoresMap();
   const studentTestVersions = state._studentTestVersions || buildStudentTestVersionsMap();
   const studentFacilitated = state._studentFacilitated || buildStudentFacilitatedMap();
+  const studentChecks = state._studentChecks || buildStudentChecksMap();
 
   // Firebase converte gli array JS in oggetti { "0": {...}, "1": {...} }
   const rawClasses = Array.isArray(fbData) ? fbData : Object.values(fbData);
@@ -3041,6 +3443,7 @@ function mergeFirebaseClasses(fbData) {
             scores: studentScores[studentId] || {},
             testVersions: studentTestVersions[studentId] || {},
             facilitated: studentFacilitated[studentId] === true,
+            checks: studentChecks[studentId] || {},
           };
         });
 

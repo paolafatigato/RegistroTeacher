@@ -82,7 +82,10 @@
     <section id="testsView" class="panel view">
       <div class="panel-header">
         <h2>Verifiche</h2>
-        <button id="addTestBtn" class="btn btn-primary">+ Nuova verifica</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="testsSettingsBtn" class="btn btn-secondary" title="Gestisci materie, categorie e colori classi">⚙️ Impostazioni</button>
+          <button id="addTestBtn" class="btn btn-primary">+ Nuova verifica</button>
+        </div>
       </div>
       <div id="testsList" class="card-grid"></div>
     </section>
@@ -97,11 +100,13 @@
         </div>
         <div class="field">
           <label for="newTestSubjectInput">Materia</label>
-          <input id="newTestSubjectInput" name="newTestSubjectInput" type="text" placeholder="Materia" required />
+          <input id="newTestSubjectInput" name="newTestSubjectInput" type="text" placeholder="Materia" list="subjectsSuggestions" autocomplete="off" />
+          <datalist id="subjectsSuggestions"></datalist>
         </div>
         <div class="field">
           <label for="newTestCategoryInput">Categoria <small style="font-weight:400;color:#888;">(opzionale — es. Grammatica, Reading, Writing…)</small></label>
-          <input id="newTestCategoryInput" name="newTestCategoryInput" type="text" placeholder="Categoria" />
+          <input id="newTestCategoryInput" name="newTestCategoryInput" type="text" placeholder="Categoria" list="categoriesSuggestions" autocomplete="off" />
+          <datalist id="categoriesSuggestions"></datalist>
         </div>
         <menu>
           <button id="cancelNewTestBtn" type="reset">Annulla</button>
@@ -110,6 +115,40 @@
       </form>
     </dialog>
 
+    <!-- Dialog impostazioni verifiche -->
+    <dialog id="testsSettingsDialog">
+      <div class="settings-dialog-inner">
+        <h3>⚙️ Impostazioni Verifiche</h3>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="subjects">Materie</button>
+          <button class="settings-tab" data-tab="categories">Categorie</button>
+          <button class="settings-tab" data-tab="classcolors">Colori classi</button>
+        </div>
+        <div class="settings-tab-content" id="settingsTabSubjects">
+          <p class="settings-hint">Le materie salvate appaiono come suggerimenti nel form "Nuova verifica".</p>
+          <div class="settings-add-row">
+            <input id="newSubjectInput" type="text" placeholder="Aggiungi materia…" />
+            <button id="addSubjectBtn" class="btn btn-primary btn-small">+ Aggiungi</button>
+          </div>
+          <ul id="subjectsList" class="settings-list"></ul>
+        </div>
+        <div class="settings-tab-content" id="settingsTabCategories" style="display:none;">
+          <p class="settings-hint">Le categorie salvate appaiono come suggerimenti nel form "Nuova verifica".</p>
+          <div class="settings-add-row">
+            <input id="newCategoryInput" type="text" placeholder="Aggiungi categoria…" />
+            <button id="addCategoryBtn" class="btn btn-primary btn-small">+ Aggiungi</button>
+          </div>
+          <ul id="categoriesList" class="settings-list"></ul>
+        </div>
+        <div class="settings-tab-content" id="settingsTabClassColors" style="display:none;">
+          <p class="settings-hint">Assegna un colore a ogni classe. Le verifiche mostreranno il colore della classe a cui appartengono.</p>
+          <div id="classColorsList" class="settings-class-colors"></div>
+        </div>
+        <div class="settings-dialog-footer">
+          <button id="closeSettingsBtn" class="btn btn-secondary">Chiudi</button>
+        </div>
+      </div>
+    </dialog>
     <section id="testView" class="panel view">
       <div class="panel-header">
         <h2>Valutazione</h2>

@@ -301,28 +301,81 @@ body {
   transition: flex-basis 0.2s ease, width 0.2s ease;
 }
 
+.section-header-cell,
+.subheader-cell {
+}
+
+/* Overlay buttons above header text to avoid layout shift */
+/* Overlay header buttons: absolute within the TH (thead th is positioning context) */
 .section-header-cell .btn,
 .subheader-cell .subsection-remove {
-  max-width: 0;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+  z-index: 4;
   opacity: 0;
-  padding: 0;
-  margin-left: 0;
-  border-width: 0;
   pointer-events: none;
-  overflow: hidden;
-  transform: scale(0.9);
-  transition: max-width 0.2s ease, opacity 0.2s ease, transform 0.2s ease, padding 0.2s ease, margin 0.2s ease, border-width 0.2s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-sizing: border-box;
+  height: 30px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
 }
 
 .section-header-cell:focus-within .btn,
-.subheader-cell:focus-within .subsection-remove {
-  max-width: 36px;
+.section-header-cell:hover .btn,
+.subheader-cell:focus-within .subsection-remove,
+.subheader-cell:hover .subsection-remove {
   opacity: 1;
-  padding: 6px 10px;
-  margin-left: 6px;
-  border-width: 1px;
   pointer-events: auto;
-  transform: scale(1.05);
+  transform: translateY(-50%) scale(1.05);
+}
+
+/* Position add and remove separately so + remains visible */
+.section-header-cell .section-add-btn {
+  right: 46px;
+}
+.section-header-cell .section-remove-btn {
+  right: 8px;
+}
+.subheader-cell .subsection-remove {
+  right: 8px;
+}
+
+/* Ensure buttons are vertically centered inside the TH for all header rows */
+.grade-table thead .section-header-cell .btn,
+.grade-table thead .subheader-cell .subsection-remove {
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+  z-index: 6;
+}
+
+/* Ensure buttons are positioned relative to the TH, not to inner wrapper */
+.grade-table thead th { position: relative; }
+
+/* Header comment trigger colors: map has-comment to fuchsia for pink subheaders,
+   and to azzurro for blue/glaucous headers. */
+.grade-table thead th.subheader .comment-trigger.has-comment {
+  background: #E85D9D; /* fucsia */
+}
+.grade-table thead th:not(.subheader) .comment-trigger.has-comment {
+  background: #6ec6ff; /* azzurro */
+}
+
+/* Color the whole header cell when it contains a header comment */
+.grade-table thead th.has-header-comment {
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.grade-table thead th.subheader.has-header-comment {
+  background: #E85D9D; /* fucsia */
+  color: #3f3f3f;
+}
+.grade-table thead th:not(.subheader).has-header-comment {
+  background: #6ec6ff; /* azzurro */
+  color: #0b2c4a;
 }
 
 
@@ -346,12 +399,13 @@ body {
 .grade-table thead th {
   padding: 4px 8px;
   font-size: 13px;
+  position: relative; /* make header cells the positioning context for overlay buttons */
 }
 
 /* + Section bar column */
 .add-section-col-th {
-  width: 42px; /* narrower column */
-  min-width: 42px;
+  width: 60px;
+  min-width: 60px;
   padding: 0;
   position: relative;   /* needed for absolute child */
   background: var(--glaucous);
@@ -390,8 +444,79 @@ body {
 }
 
 .add-section-col-td {
-  padding: 0;
+  padding: 4px 6px;
+  text-align: center;
   background: rgba(110, 198, 255, 0.08) !important;
+  position: relative;
+}
+
+/* Wrapper per checkbox + nota hover */
+.check-cell-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: relative;
+}
+
+.check-cell-wrapper input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--glaucous);
+  flex-shrink: 0;
+}
+
+/* Nuvoletta tooltip: appare sopra la cella al passaggio del mouse */
+.check-note-input {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: none;
+  width: max-content;
+  max-width: 160px;
+  background: var(--white);
+  border: 1.5px solid var(--glaucous);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-family: inherit;
+  box-shadow: 0 -3px 14px rgba(0,0,0,0.18);
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.check-note-input:empty {
+  display: none !important;
+}
+
+.add-section-col-td:hover .check-note-input {
+  display: block;
+}
+
+/* Header label per colonna spunta (riga max) */
+.check-label-th {
+  vertical-align: middle;
+}
+
+.check-label-th input {
+  width: 100%;
+  font-size: 10px;
+  text-align: center;
+  padding: 3px 4px;
+  border-radius: 5px;
+  border: 1px solid rgba(109,134,200,0.4);
+  background: transparent;
+  color: #3f3f3f;
+}
+
+.check-label-th input:focus {
+  background: white;
+  outline: none;
+  border-color: var(--glaucous);
 }
 
 /* Narrow DSA column — shrinks to content width */
@@ -1009,4 +1134,212 @@ body {
 
 .tag-remove:hover {
   color: var(--flame-orange);
+}
+/* ═══════════════════════════════════════════════════════════
+   SETTINGS DIALOG — Impostazioni Verifiche
+   ═══════════════════════════════════════════════════════════ */
+
+#testsSettingsDialog {
+  border: none;
+  border-radius: 16px;
+  padding: 0;
+  min-width: 460px;
+  max-width: 560px;
+  width: 90vw;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  overflow: visible;
+}
+
+#testsSettingsDialog::backdrop {
+  background: rgba(0,0,0,0.45);
+}
+
+.settings-dialog-inner {
+  padding: 28px 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-dialog-inner h3 {
+  margin: 0 0 18px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #5a3060;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #e8d5f0;
+  margin-bottom: 18px;
+}
+
+.settings-tab {
+  background: none;
+  border: none;
+  padding: 7px 16px;
+  font-size: .9rem;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  transition: color .15s, background .15s;
+}
+
+.settings-tab:hover {
+  color: #7c3aed;
+  background: #f3eeff;
+}
+
+.settings-tab.active {
+  color: #7c3aed;
+  background: #f3eeff;
+  border-bottom: 2px solid #7c3aed;
+  margin-bottom: -2px;
+}
+
+.settings-hint {
+  font-size: .83rem;
+  color: #888;
+  margin: 0 0 12px;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settings-add-row input {
+  flex: 1;
+  padding: 7px 11px;
+  border: 1.5px solid #e2b4c8;
+  border-radius: 8px;
+  font-size: .9rem;
+}
+
+.settings-add-row input:focus {
+  outline: none;
+  border-color: #9b59b6;
+  box-shadow: 0 0 0 2px rgba(155,89,182,.18);
+}
+
+.settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.settings-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #faf5ff;
+  border: 1px solid #e8d5f0;
+  font-size: .9rem;
+}
+
+.settings-list-remove {
+  font-size: .85rem;
+  opacity: .6;
+  padding: 1px 7px;
+  transition: opacity .15s;
+}
+
+.settings-list-remove:hover { opacity: 1; color: #c0392b; }
+
+/* ── Colori classi ── */
+.settings-class-colors {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.class-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #faf5ff;
+  border-radius: 10px;
+  border: 1px solid #e8d5f0;
+}
+
+.class-color-label {
+  font-weight: 700;
+  font-size: .9rem;
+  min-width: 60px;
+  color: #5a3060;
+}
+
+.class-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  align-items: center;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  transition: transform .12s, border-color .12s;
+  padding: 0;
+}
+
+.color-swatch:hover { transform: scale(1.18); }
+
+.color-swatch.selected {
+  border-color: #333;
+  transform: scale(1.18);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #7c3aed44;
+}
+
+.color-custom-input {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #ccc;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  overflow: hidden;
+}
+
+.color-custom-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-custom-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+.class-color-preview {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .75rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  border: 2px solid rgba(255,255,255,.6);
+  box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  flex-shrink: 0;
+}
+
+.settings-dialog-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
