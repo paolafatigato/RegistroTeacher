@@ -3479,6 +3479,19 @@ function applyFirebaseGrading(data) {
     state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
   }
 
+  // Ripristina le impostazioni (materie, categorie, colori classi)
+  if (data.settings && typeof data.settings === 'object') {
+    // Normalizza subjects e categories: Firebase può trasformare array in oggetti {"0":…}
+    const subjects = Array.isArray(data.settings.subjects)
+      ? data.settings.subjects
+      : (data.settings.subjects ? Object.values(data.settings.subjects) : []);
+    const categories = Array.isArray(data.settings.categories)
+      ? data.settings.categories
+      : (data.settings.categories ? Object.values(data.settings.categories) : []);
+    const classColors = data.settings.classColors || {};
+    state.settings = { ...state.settings, subjects, categories, classColors };
+  }
+
   // Memorizza le mappe in state così mergeFirebaseClasses le userà
   state._studentScores = data.scores || {};
   state._studentTestVersions = data.testVersions || {};
