@@ -242,14 +242,8 @@ function init() {
   backToHomeBtn.addEventListener("click", () => setView("home"));
 
   addClassBtn.addEventListener("click", () => {
-    const name = newClassNameInput.value.trim() || generateClassName();
-    const newClass = createClass(name);
-    state.classes.push(newClass);
-    state.selectedClassId = newClass.id;
-    newClassNameInput.value = "";
-    saveState();
-    render();
-    setView("class");
+    alert("Le classi si creano in Classroom Manager: si apre in una nuova scheda.");
+    goToClassroomManager(null, "newclass");
   });
 
   renameClassBtn.addEventListener("click", () => {
@@ -257,9 +251,8 @@ function init() {
     if (!selectedClass) {
       return;
     }
-    selectedClass.name = classRenameInput.value.trim() || selectedClass.name;
-    saveState();
-    render();
+    alert("Per rinominare una classe usa Classroom Manager: si apre in una nuova scheda, già sulla classe giusta.");
+    goToClassroomManager(selectedClass.id, "rename");
   });
 
   deleteClassBtn.addEventListener("click", () => {
@@ -267,16 +260,11 @@ function init() {
     if (!selectedClass) {
       return;
     }
-    if (!confirm("Eliminare questa classe?")) {
-      return;
-    }
-    state.classes = state.classes.filter(
-      (classItem) => classItem.id !== selectedClass.id
-    );
-    ensureClassState();
-    saveState();
-    render();
-    setView("home");
+    // Le classi arrivano da Classroom Manager (che gestisce anche i banchi/l'aula):
+    // eliminarle da qui non le cancellerebbe davvero, tornerebbero al prossimo
+    // aggiornamento da Firebase. La gestione classi resta in Classroom Manager.
+    alert("Per eliminare una classe usa Classroom Manager: si apre in una nuova scheda, già sulla classe giusta.");
+    goToClassroomManager(selectedClass.id, null);
   });
 
   classSelect.addEventListener("change", (event) => {
@@ -510,9 +498,8 @@ function init() {
     if (!selectedClass) {
       return;
     }
-    selectedClass.students.push(createStudent());
-    saveState();
-    renderClassDetail();
+    alert("Gli studenti si aggiungono da Classroom Manager: si apre in una nuova scheda, già sulla classe giusta.");
+    goToClassroomManager(selectedClass.id, "students");
   });
 
   addBulkStudentsBtn.addEventListener("click", () => {
@@ -520,22 +507,8 @@ function init() {
     if (!selectedClass) {
       return;
     }
-
-    const entries = bulkStudentsInput.value
-      .replace(/\n/g, ",")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    entries.forEach((fullName) => {
-      const student = createStudent();
-      student.name = fullName;
-      selectedClass.students.push(student);
-    });
-
-    bulkStudentsInput.value = "";
-    saveState();
-    renderClassDetail();
+    alert("Gli studenti si aggiungono da Classroom Manager: si apre in una nuova scheda, già sulla classe giusta.");
+    goToClassroomManager(selectedClass.id, "students");
   });
 
   exportBtn.addEventListener("click", exportCSV);
@@ -678,10 +651,18 @@ function updateView() {
       break;
     case "test":
       testView.classList.add("active");
+      // Riallinea i menu Classe/Verifica/Versione a state.selectedClassId /
+      // state.selectedTestId, che potrebbero essere cambiati da un'altra vista
+      // (es. Genitori) mentre eravamo altrove.
+      renderTestTable();
       break;
     case "parents":
       if (parentsView) {
         parentsView.classList.add("active");
+        // Stesso motivo: riallinea la vista Genitori sulla classe/verifica
+        // correnti (es. quella su cui si stava lavorando in Valutazione),
+        // invece di mostrare la selezione mostrata l'ultima volta.
+        renderParentsView();
         renderParentsAccountsList();
       } else {
         homeView.classList.add("active");
@@ -717,6 +698,11 @@ function renderClassesList() {
     const openBtn = document.createElement("button");
     openBtn.classList.add("btn", "btn-secondary");
     openBtn.textContent = "Apri";
+    const classColor = state.settings?.classColors?.[classItem.id];
+    if (classColor) {
+      openBtn.style.borderLeft = `5px solid ${classColor}`;
+      openBtn.style.paddingLeft = "11px";
+    }
     openBtn.addEventListener("click", () => {
       state.selectedClassId = classItem.id;
       saveState();
@@ -2876,6 +2862,21 @@ function createClass(name) {
     name: name || "New Class",
     students: [],
   };
+}
+
+/**
+ * Classroom Manager resta l'unica base per creare e modificare classi e
+ * alunni. Le azioni di modifica qui in Teacher Registro non scrivono nulla:
+ * portano l'utente su Classroom Manager, già sulla classe/azione giusta
+ * grazie ai parametri nell'URL (letti da Classroom Manager stesso).
+ */
+function goToClassroomManager(classId, action) {
+  const base = "https://paolafatigato.github.io/Class-Manager/";
+  const params = new URLSearchParams();
+  if (classId) params.set("classId", classId);
+  if (action) params.set("action", action);
+  const query = params.toString();
+  window.open(query ? `${base}?${query}` : base, "_blank", "noopener");
 }
 
 function createId(prefix) {
