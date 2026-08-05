@@ -136,6 +136,7 @@ const defaultData = {
   selectedTestVersionId: null,
   selectedConfigVersionId: null,
   view: "home",
+  archivedTests: [], // verifiche archiviate a inizio anno, riusabili come modello
 };
 
 const state = loadState();
@@ -419,6 +420,8 @@ function init() {
     newTestSubjectInput.value = "";
     const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
     if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
+    _selectedArchivedTestTemplate = null;
+    refreshArchivedTestPicker();
     refreshSuggestions();
     newTestDialog.showModal();
   });
@@ -463,7 +466,10 @@ function init() {
       const subject = newTestSubjectInput.value.trim();
       const newTestCategoryInput = document.getElementById("newTestCategoryInput");
       const category = newTestCategoryInput ? newTestCategoryInput.value.trim() : "";
-      const newTest = createTest(name, subject, category);
+      const newTest = _selectedArchivedTestTemplate
+        ? buildTestFromTemplate(_selectedArchivedTestTemplate, name, subject, category)
+        : createTest(name, subject, category);
+      _selectedArchivedTestTemplate = null;
       state.tests.push(newTest);
       state.selectedTestId = newTest.id;
       state.selectedTestVersionId = newTest.versions[0]?.id ?? null;
@@ -2844,6 +2850,149 @@ function createTest(title, subject, category) {
   };
 }
 
+// ── Riuso verifiche archiviate come modello ─────────────────────────────────
+
+function cloneSectionWithNewIds(section) {
+  return {
+    ...section,
+    id: createId("sec"),
+    subsections: (section.subsections || []).map((sub) => ({ ...sub, id: createId("sub") })),
+  };
+}
+
+function cloneVersionWithNewIds(version) {
+  return {
+    id: createId("ver"),
+    name: version.name,
+    sections: (version.sections || []).map(cloneSectionWithNewIds),
+  };
+}
+
+/**
+ * Crea una nuova verifica clonando struttura, sezioni e pesi da una verifica
+ * archiviata (id/versioni/sezioni rigenerati, nessun voto/classe collegati).
+ * Titolo/materia/categoria passati dal form hanno sempre la precedenza.
+ */
+function buildTestFromTemplate(archivedTest, title, subject, category) {
+  const versions = (archivedTest.versions && archivedTest.versions.length)
+    ? archivedTest.versions.map(cloneVersionWithNewIds)
+    : [
+        { id: createId("ver"), name: "Standard", sections: [createSection("A")] },
+        { id: createId("ver"), name: "Facilitata", sections: [createSection("A")] },
+      ];
+
+  // Prova a mantenere quale versione clonata corrisponde a quella "facilitata"
+  const oldFacilitatedIdx = (archivedTest.versions || []).findIndex(
+    (v) => v.id === archivedTest.facilitatedVersionId
+  );
+  const facilitatedVersionId =
+    oldFacilitatedIdx >= 0 ? versions[oldFacilitatedIdx].id : versions[versions.length - 1]?.id;
+
+  return {
+    id: createId("test"),
+    title: title || archivedTest.title || "Nuova verifica",
+    subject: subject || archivedTest.subject || "",
+    categories: category ? [category] : (archivedTest.categories || []),
+    classIds: [],
+    classDates: {},
+    versions,
+    facilitatedVersionId,
+    checkboxLabel: archivedTest.checkboxLabel,
+  };
+}
+
+let _selectedArchivedTestTemplate = null;
+let _archivedTestPickerBuilt = false;
+
+/** Inserisce (una sola volta) il selettore "riusa da archiviata" nel form nuova verifica. */
+function ensureArchivedTestPicker() {
+  const form = document.getElementById("newTestForm");
+  if (!form || _archivedTestPickerBuilt) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  wrap.id = "archivedTestPickerField";
+  wrap.style.cssText =
+    "background:rgba(159,122,234,0.08);border:1.5px solid rgba(159,122,234,0.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;";
+
+  const label = document.createElement("label");
+  label.textContent = "📦 Riusa da una verifica archiviata (facoltativo)";
+  wrap.appendChild(label);
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:4px;";
+
+  const select = document.createElement("select");
+  select.id = "archivedTestTemplateSelect";
+  select.style.flex = "1";
+  row.appendChild(select);
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "btn btn-secondary btn-small";
+  clearBtn.textContent = "Nessuna";
+  clearBtn.addEventListener("click", () => {
+    select.value = "";
+    _selectedArchivedTestTemplate = null;
+  });
+  row.appendChild(clearBtn);
+  wrap.appendChild(row);
+
+  const hint = document.createElement("small");
+  hint.style.cssText = "display:block;margin-top:6px;opacity:.75;";
+  hint.textContent = "Riprende titolo, materia, sezioni e pesi dalla verifica scelta: potrai comunque modificare tutto prima di creare.";
+  wrap.appendChild(hint);
+
+  select.addEventListener("change", () => {
+    const archivedId = select.value;
+    _selectedArchivedTestTemplate = (state.archivedTests || []).find((t) => t.id === archivedId) || null;
+    if (_selectedArchivedTestTemplate) {
+      const nameInput = document.getElementById("newTestNameInput");
+      const subjectInput = document.getElementById("newTestSubjectInput");
+      const catInput = document.getElementById("newTestCategoryInput");
+      if (nameInput) nameInput.value = _selectedArchivedTestTemplate.title || "";
+      if (subjectInput) subjectInput.value = _selectedArchivedTestTemplate.subject || "";
+      if (catInput) catInput.value = (_selectedArchivedTestTemplate.categories || [])[0] || "";
+    }
+  });
+
+  form.insertBefore(wrap, form.firstChild);
+  _archivedTestPickerBuilt = true;
+}
+
+/** Aggiorna le opzioni del selettore "riusa da archiviata" (nascosto se non ce ne sono). */
+function refreshArchivedTestPicker() {
+  ensureArchivedTestPicker();
+  const wrap = document.getElementById("archivedTestPickerField");
+  const select = document.getElementById("archivedTestTemplateSelect");
+  if (!wrap || !select) return;
+
+  const archived = state.archivedTests || [];
+  if (!archived.length) {
+    wrap.style.display = "none";
+    return;
+  }
+  wrap.style.display = "";
+
+  select.innerHTML = "";
+  const emptyOpt = document.createElement("option");
+  emptyOpt.value = "";
+  emptyOpt.textContent = "— Nessuna (verifica vuota) —";
+  select.appendChild(emptyOpt);
+
+  archived
+    .slice()
+    .sort((a, b) => (b.archivedAt || "").localeCompare(a.archivedAt || ""))
+    .forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      const yearLabel = t.schoolYearLabel ? ` (${t.schoolYearLabel})` : "";
+      opt.textContent = `${t.title || "Verifica"}${t.subject ? " — " + t.subject : ""}${yearLabel}`;
+      select.appendChild(opt);
+    });
+  select.value = "";
+}
+
 /** Garantisce che i test vecchi abbiano i nuovi campi */
 function ensureTestMeta(test) {
   if (!test) return;
@@ -2954,6 +3103,10 @@ function saveGradingToFirebase() {
     testVersions: buildStudentTestVersionsMap(),
     checks: buildStudentChecksMap(),
     parentConfig: buildStudentParentConfigMap(),
+    // Includiamo anche le verifiche archiviate: questa scrittura sostituisce
+    // l'INTERO nodo "grading", quindi se non le includessimo qui verrebbero
+    // cancellate ad ogni salvataggio dei voti.
+    archivedTests: state.archivedTests || [],
     savedAt: Date.now(),
   };
   fbDb.ref(path).set(data)
@@ -3134,6 +3287,7 @@ function loadState() {
       _studentFacilitated: studentFacilitated,
       _studentChecks: studentChecks,
       _studentParentConfig: studentParentConfig,
+      archivedTests: Array.isArray(parsed.archivedTests) ? parsed.archivedTests : [],
     };
 
     tests.forEach((testItem) => {
@@ -3478,6 +3632,13 @@ function applyFirebaseGrading(data) {
     state.tests = rawTests.map(normalizeTestFromFirebase);
     state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
   }
+
+  // Verifiche archiviate (a inizio anno nuovo, da Classroom Manager): usabili
+  // come modello per ricreare rapidamente una nuova verifica.
+  const rawArchivedTests = Array.isArray(data.archivedTests)
+    ? data.archivedTests
+    : (data.archivedTests && typeof data.archivedTests === 'object' ? Object.values(data.archivedTests) : []);
+  state.archivedTests = rawArchivedTests.filter(Boolean).map(normalizeTestFromFirebase);
 
   // Memorizza le mappe in state così mergeFirebaseClasses le userà
   state._studentScores = data.scores || {};
