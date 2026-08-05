@@ -2930,6 +2930,39 @@ function gradeTierClass(value) {
 //  l'intero state.tests) senza bisogno di alcun codice aggiuntivo.
 // =====================================================================
 
+/**
+ * Crea il campo per un giudizio (generale o specifico per studente): un
+ * <input> per schermo/editing + un <div> gemello, nascosto a schermo, che
+ * in stampa lo sostituisce. Serve perché un <input> non va MAI a capo — se
+ * riduciamo le colonne per stare in una pagina, un giudizio lungo verrebbe
+ * tagliato invece di scendere su più righe. Il gemello invece è testo
+ * normale e si adatta.
+ */
+function createRubricJudgmentField(initialValue, placeholder, onChange) {
+  const wrap = document.createElement("div");
+  wrap.classList.add("rubric-judgment-wrap");
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = placeholder;
+  input.value = initialValue ?? "";
+
+  const printText = document.createElement("div");
+  printText.classList.add("rubric-cell-print-text");
+  printText.textContent = initialValue ?? "";
+
+  input.addEventListener("input", () => {
+    printText.textContent = input.value;
+  });
+  input.addEventListener("change", (e) => {
+    onChange(e.target.value);
+  });
+
+  wrap.appendChild(input);
+  wrap.appendChild(printText);
+  return wrap;
+}
+
 function renderRubricGrid() {
   if (!rubricView || !rubricTable) return;
 
@@ -3119,12 +3152,7 @@ function renderRubricGrid() {
           if (!sub.rubric || typeof sub.rubric !== "object") {
             sub.rubric = {};
           }
-          const input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "Giudizio…";
-          input.value = sub.rubric[voteValue] ?? "";
-          input.addEventListener("change", (e) => {
-            const val = e.target.value;
+          const field = createRubricJudgmentField(sub.rubric[voteValue], "Giudizio…", (val) => {
             if (val.trim()) {
               sub.rubric[voteValue] = val;
             } else {
@@ -3132,7 +3160,7 @@ function renderRubricGrid() {
             }
             saveState();
           });
-          td.appendChild(input);
+          td.appendChild(field);
         }
         row.appendChild(td);
       });
@@ -3284,20 +3312,19 @@ function openStudentRubricDialog(student, test, version) {
           if (!sub.studentRubric[student.id] || typeof sub.studentRubric[student.id] !== "object") {
             sub.studentRubric[student.id] = {};
           }
-          const input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "Giudizio specifico…";
-          input.value = sub.studentRubric[student.id][voteValue] ?? "";
-          input.addEventListener("change", (e) => {
-            const val = e.target.value;
-            if (val.trim()) {
-              sub.studentRubric[student.id][voteValue] = val;
-            } else {
-              delete sub.studentRubric[student.id][voteValue];
+          const field = createRubricJudgmentField(
+            sub.studentRubric[student.id][voteValue],
+            "Giudizio specifico…",
+            (val) => {
+              if (val.trim()) {
+                sub.studentRubric[student.id][voteValue] = val;
+              } else {
+                delete sub.studentRubric[student.id][voteValue];
+              }
+              saveState();
             }
-            saveState();
-          });
-          specificTd.appendChild(input);
+          );
+          specificTd.appendChild(field);
         }
         row.appendChild(specificTd);
       });
