@@ -1,0 +1,298 @@
+:root {
+  --glaucous: #6D86C8;
+  --text-dark: #2f2f2f;
+  --white: #ffffff;
+  --antique-white: #FCEFDc;
+  --shadow: rgba(36, 36, 36, 0.1);
+
+  /* Palette "Genitori" */
+  --zaino-100:#d9ef9a;
+  --zaino-600:#599c73;
+  --sonno-100:#a1dce0;
+  --sonno-600:#3a7d85;
+  --emozioni-100:#ffbf85;
+  --emozioni-600:#f45448;
+  --org-100:#ffe1a8;
+  --org-600:#e2932c;
+  --attenzione-100:#c3cdf7;
+  --attenzione-600:#4a5fc4;
+  --ansia-100:#bfe0f7;
+  --ansia-600:#4f89c7;
+  --autostima-100:#ffcdb2;
+  --autostima-600:#e2725b;
+  --docente-100:#e4b5eb;
+  --docente-600:#9b56a7;
+  --accento-100:#ffb0d0;
+  --accento-600:#e94779;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--antique-white);
+  color: var(--text-dark);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.parent-app-header {
+  background: var(--glaucous);
+  color: var(--white);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-shadow: 0 4px 10px var(--shadow);
+}
+
+.parent-app-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.parent-user-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.parent-container {
+  flex: 1;
+  padding: 24px 16px 40px;
+  display: flex;
+  justify-content: center;
+}
+
+.parent-panel {
+  background: var(--white);
+  border-radius: 16px;
+  padding: 28px 24px;
+  box-shadow: 0 6px 18px var(--shadow);
+  width: 100%;
+  max-width: 560px;
+}
+
+.parent-panel h2 {
+  margin-top: 0;
+  color: var(--glaucous);
+}
+
+.parent-hint {
+  color: #777;
+  font-size: 14px;
+}
+
+.parent-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f3f3f;
+}
+
+.field input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--sonno-100);
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--sonno-600);
+}
+
+.field-error {
+  color: var(--emozioni-600);
+  font-size: 13px;
+  margin: 0;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 11px 18px;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--glaucous);
+  color: var(--white);
+}
+
+.btn-secondary {
+  background: var(--sonno-100);
+  color: #234a4e;
+}
+
+.btn-small {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+/* — Intestazione studente — */
+.parent-student-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1.5px dashed var(--sonno-100);
+}
+
+.parent-student-header h2 {
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.parent-student-class {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--docente-600);
+  background: var(--docente-100);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+/* — Elenco verifiche — */
+.parent-tests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.parent-test-card {
+  border: 1.5px solid #eee;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: #fffdfa;
+}
+
+.parent-test-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.parent-test-head h3 {
+  margin: 0;
+  color: var(--glaucous);
+  font-size: 16px;
+}
+
+.parent-test-subject {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  background: #f0f0f0;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.parent-final-score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.parent-final-score-label {
+  font-size: 13px;
+  color: #777;
+  font-weight: 600;
+}
+
+.parent-final-score-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--sonno-600);
+}
+
+.parent-test-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.parent-test-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--antique-white);
+  font-size: 13.5px;
+}
+
+.parent-test-section-row.mode-good { background: var(--zaino-100); color: #2f5b40; }
+.parent-test-section-row.mode-mid  { background: var(--org-100); color: #8a5b0f; }
+.parent-test-section-row.mode-bad  { background: var(--emozioni-100); color: #8a2a22; }
+
+.parent-test-section-label {
+  font-weight: 600;
+}
+
+.parent-test-section-value {
+  font-weight: 700;
+}
+
+.parent-test-comment {
+  background: var(--ansia-100);
+  color: #274257;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  margin-bottom: 8px;
+}
+
+.parent-test-date {
+  font-size: 11.5px;
+  color: #aaa;
+  text-align: right;
+}
+
+.parent-app-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
+  color: #999;
+}
+
+@media (max-width: 480px) {
+  .parent-final-score-value {
+    font-size: 19px;
+  }
+}

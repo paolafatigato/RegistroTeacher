@@ -10,6 +10,26 @@
   --white: #ffffff;
   --light-row: #fff7ef;
   --shadow: rgba(36, 36, 36, 0.08);
+
+  /* Palette "Genitori" */
+  --zaino-100:#d9ef9a;
+  --zaino-600:#599c73;
+  --sonno-100:#a1dce0;
+  --sonno-600:#3a7d85;
+  --emozioni-100:#ffbf85;
+  --emozioni-600:#f45448;
+  --org-100:#ffe1a8;
+  --org-600:#e2932c;
+  --attenzione-100:#c3cdf7;
+  --attenzione-600:#4a5fc4;
+  --ansia-100:#bfe0f7;
+  --ansia-600:#4f89c7;
+  --autostima-100:#ffcdb2;
+  --autostima-600:#e2725b;
+  --docente-100:#e4b5eb;
+  --docente-600:#9b56a7;
+  --accento-100:#ffb0d0;
+  --accento-600:#e94779;
 }
 
 * {
@@ -101,25 +121,6 @@ body {
   gap: 12px;
   align-items: flex-end;
   margin-bottom: 16px;
-}
-
-/* Uniforma bottoni all'interno della card: stessa forma, padding e margini */
-.card .panel-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: flex-start;
-  padding-top: 8px;
-  margin-bottom: 0;
-}
-.card .panel-actions .btn {
-  padding: 8px 14px;
-  border-radius: 12px;
-  margin: 0;
-  font-size: 0.95em;
-}
-.card .panel-actions .btn + .btn {
-  margin-left: 8px;
 }
 
   .btn-classroom {
@@ -804,16 +805,6 @@ body {
   gap: 8px;
 }
 
-.paste-hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #6b7280;
-  background: rgba(99, 102, 241, 0.07);
-  border-left: 3px solid #818cf8;
-  padding: 6px 12px;
-  border-radius: 6px;
-}
-
 .warning {
   background: rgba(254, 80, 7, 0.12);
   border-left: 4px solid var(--flame-orange);
@@ -1373,39 +1364,332 @@ body {
   justify-content: flex-end;
 }
 
-/* ── Nuova verifica: lista classi ── */
-.new-test-classes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-top: 4px;
-  max-height: 160px;
-  overflow-y: auto;
-}
-
-label.new-test-class-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border-radius: 7px;
-  background: #faf5ff;
-  border: 1px solid #e8d5f0;
-  cursor: pointer;
-  font-size: .9rem;
-  transition: background .12s;
-}
-
-label.new-test-class-row:hover { background: #f0e6fa; }
-
-label.new-test-class-row input[type="checkbox"] {
-  accent-color: #9b59b6;
-  width: 15px;
-  height: 15px;
-}
+/* =====================================================================
+   VISTA GENITORI
+===================================================================== */
 
 .field-error {
-  font-size: .82rem;
-  color: #c0392b;
+  color: var(--emozioni-600);
+  font-size: 12px;
   margin: 4px 0 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badge-facilitated {
+  background: var(--docente-100);
+  color: var(--docente-600);
+}
+
+.parents-class-default-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  background: var(--attenzione-100);
+  border: 1.5px dashed var(--attenzione-600);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+}
+
+.parents-class-default-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--attenzione-600);
+}
+
+.parents-class-default-status {
+  font-size: 12px;
+  color: #5a5a5a;
+  opacity: 0.8;
+}
+
+.parents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.parent-student-card {
+  background: var(--white);
+  border: 1.5px solid #eee;
+  border-left: 6px solid var(--sonno-100);
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 3px 10px var(--shadow);
+  transition: border-color 0.2s ease;
+}
+
+.parent-student-card.is-published {
+  border-left-color: var(--zaino-600);
+}
+
+.parent-student-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.parent-student-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-dark);
+}
+
+.parent-publish-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--org-100);
+  color: #8a5b0f;
+}
+
+.parent-publish-badge.is-published {
+  background: var(--zaino-100);
+  color: #2f5b40;
+}
+
+/* — Voto finale (sempre visibile) — */
+.parent-teacher-final {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.parent-teacher-final-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #777;
+}
+
+.parent-teacher-final-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--sonno-600);
+}
+
+/* — Selettore unico: cosa vede il genitore per TUTTE le sezioni — */
+.parent-sections-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.parent-sections-mode-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+/* — Voti di sezione: sempre visibili al docente, piccoli e a basso contrasto — */
+.parent-teacher-section-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: var(--light-row);
+  border-radius: 10px;
+}
+
+.parent-teacher-section-hint {
+  font-size: 12px;
+  color: #aaa;
+  font-weight: 500;
+}
+
+.parent-teacher-section-hint.level-good { color: #9ec4ab; }
+.parent-teacher-section-hint.level-mid  { color: #d9b988; }
+.parent-teacher-section-hint.level-bad  { color: #e0a9a4; }
+
+.parent-mode-select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1.5px solid #d0d0d0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--white);
+}
+
+.parent-mode-select.mode-grade      { border-color: var(--sonno-600);     color: var(--sonno-600); }
+.parent-mode-select.mode-indicator  { border-color: var(--org-600);       color: var(--org-600);      background: var(--org-100); }
+.parent-mode-select.mode-hidden     { border-color: #bbb; color: #888; }
+
+.parent-comment-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.parent-comment-wrap label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f3f;
+}
+
+.parent-comment-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ansia-100);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.parent-comment-textarea:focus {
+  outline: none;
+  border-color: var(--ansia-600);
+}
+
+.parent-regen-btn {
+  align-self: flex-start;
+  background: var(--attenzione-100);
+  color: var(--attenzione-600);
+}
+
+.parents-publish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1.5px dashed var(--pastel-pink);
+}
+
+.parents-publish-status {
+  font-size: 13px;
+  color: #666;
+}
+
+.parents-accounts-section {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1.5px solid #f0f0f0;
+}
+
+.parents-accounts-header h3 {
+  margin: 0 0 4px;
+  color: var(--docente-600);
+}
+
+.parents-accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.parent-account-row-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  background: var(--docente-100);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.parent-account-row-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #4a2a52;
+  min-width: 130px;
+}
+
+.parent-account-row-email {
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px solid #d6b8dd;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--white);
+}
+
+.parent-account-row-email:focus {
+  outline: none;
+  border-color: var(--docente-600);
+}
+
+.parent-account-row-email.has-error {
+  border-color: var(--emozioni-600);
+  background: var(--emozioni-100);
+}
+
+.parent-account-row-status {
+  font-size: 12px;
+  color: #7a5c81;
+  white-space: nowrap;
+}
+
+.parent-account-row-status.is-linked {
+  color: #2f5b40;
+  font-weight: 600;
+}
+
+.parents-accounts-sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.parent-request-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  background: var(--attenzione-100);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.parent-request-info {
+  flex: 1 1 220px;
+  font-size: 13.5px;
+  color: #2c3560;
+  line-height: 1.4;
+}
+
+.parent-request-student-select {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--attenzione-600);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--white);
+  min-width: 180px;
+}
+
+.parent-request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .parent-sections-mode-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

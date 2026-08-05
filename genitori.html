@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Area Genitori</title>
+  <link rel="stylesheet" href="genitori.css" />
+  <link rel="icon" href="favicon.png">
+</head>
+<body>
+
+  <header class="parent-app-header">
+    <h1>👨‍👩‍👧 Area Genitori</h1>
+    <div id="parentUserBar" class="parent-user-bar" style="display:none;">
+      <span id="parentUserInfo"></span>
+      <button id="parentLogoutBtn" class="btn btn-secondary btn-small">Esci</button>
+    </div>
+  </header>
+
+  <main class="parent-container">
+
+    <!-- ===== Schermata di accesso ===== -->
+    <section id="parentLoginScreen" class="parent-panel">
+      <h2>Accedi</h2>
+      <p class="parent-hint">Usa l'email e la password comunicate dall'insegnante.</p>
+      <form id="parentLoginForm" class="parent-login-form">
+        <div class="field">
+          <label for="parentEmailInput">Email</label>
+          <input id="parentEmailInput" type="email" required autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="parentPasswordInput">Password</label>
+          <input id="parentPasswordInput" type="password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn-primary">Accedi</button>
+        <p id="parentLoginError" class="field-error" style="display:none;"></p>
+      </form>
+    </section>
+
+    <!-- ===== Schermata dati studente ===== -->
+    <section id="parentDataScreen" class="parent-panel" style="display:none;">
+      <div id="parentStudentHeader" class="parent-student-header"></div>
+      <div id="parentTestsList" class="parent-tests-list"></div>
+      <p id="parentEmptyMessage" class="parent-hint" style="display:none;">
+        Non ci sono ancora verifiche pubblicate per il tuo/la tua figlio/a.
+      </p>
+    </section>
+
+    <!-- ===== Errore di collegamento ===== -->
+    <section id="parentLinkErrorScreen" class="parent-panel" style="display:none;">
+      <h2>⚠️ Accesso non collegato</h2>
+      <p>Questo accesso non risulta collegato a nessuno studente. Contatta l'insegnante.</p>
+    </section>
+
+  </main>
+
+  <footer class="parent-app-footer">
+    <span>Dati in sola lettura · aggiornati dall'insegnante</span>
+  </footer>
+
+  <!-- Firebase Compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <script src="genitori.js"></script>
+</html>

@@ -16,6 +16,7 @@
           <button id="navHomeBtn" class="btn btn-secondary">Classi</button>
           <button id="navTestsBtn" class="btn btn-secondary">Verifiche</button>
           <button id="navEvaluationBtn" class="btn btn-secondary">Valutazione</button>
+          <button id="navParentsBtn" class="btn btn-secondary">👨‍👩‍👧 Genitori</button>
           <!-- <button id="navConfigBtn" class="btn btn-secondary">Configurazione</button> -->
           <button id="resetBtn" class="btn btn-danger">Reset</button>
           <a href="https://paolafatigato.github.io/Class-Manager/" target="_blank" rel="noopener" id="backToClassroomManagerBtn" class="btn btn-classroom " style="text-decoration:none;display:inline-block;">ClassroomManager</a>
@@ -179,6 +180,74 @@
       </div>
       <p class="paste-hint">💡 <strong>Incolla da Excel:</strong> copia una colonna di voti in Excel, clicca sulla prima cella della colonna corrispondente e incolla — i valori si distribuiscono automaticamente verso il basso.</p>
       <div id="warningArea" class="warning-area"></div>
+    </section>
+
+    <!-- ================= VISTA GENITORI ================= -->
+    <section id="parentsView" class="panel view">
+      <div class="panel-header">
+        <h2>👨‍👩‍👧 Genitori</h2>
+        <div class="panel-actions">
+          <div class="field">
+            <label for="parentsClassSelect">Classe</label>
+            <select id="parentsClassSelect"></select>
+          </div>
+          <div class="field">
+            <label for="parentsTestSelect">Verifica</label>
+            <select id="parentsTestSelect"></select>
+          </div>
+          <div class="field">
+            <label for="parentsVersionSelect">Versione</label>
+            <select id="parentsVersionSelect"></select>
+          </div>
+        </div>
+      </div>
+
+      <p class="paste-hint">
+        💡 Il <strong>voto finale</strong> e il <strong>commento</strong> sono sempre visibili al genitore.
+        Per le sezioni, scegli un'unica modalità valida per tutta la verifica:
+        <strong>🔢 Voti delle sezioni</strong>, <strong>🟢🟡🔴 Indicatore</strong> (il colore si calcola da solo in base alla sufficienza)
+        oppure <strong>— Niente</strong>. Tu vedi comunque sempre i voti di ogni sezione, in piccolo.
+      </p>
+
+      <div id="parentsClassDefaultBar" class="parents-class-default-bar">
+        <span class="parents-class-default-label">👥 Imposta per tutta la classe (questa verifica):</span>
+        <select id="parentsClassDefaultSelect" class="parent-mode-select"></select>
+        <span id="parentsClassDefaultStatus" class="parents-class-default-status"></span>
+      </div>
+
+      <div id="parentsList" class="parents-list"></div>
+
+      <div class="parents-publish-bar">
+        <span id="parentsPublishStatus" class="parents-publish-status"></span>
+        <button id="publishParentsBtn" class="btn btn-primary">📢 Pubblica per i genitori</button>
+      </div>
+
+      <div class="parents-accounts-section">
+        <div class="parents-accounts-header">
+          <h3>🔑 Chi può accedere ai voti (questa classe)</h3>
+          <p class="settings-hint">
+            Scrivi (una volta, a inizio anno) l'email istituzionale di ogni studente e premi
+            "Sincronizza": quella persona potrà accedere su <code>genitori.html</code> con il
+            <strong>login Google che usa già</strong> — nessuna password da creare o comunicare.
+          </p>
+        </div>
+        <div id="parentsAccountsList" class="parents-accounts-list"></div>
+        <div class="parents-accounts-sync-bar">
+          <button id="syncParentsAccountsBtn" class="btn btn-primary btn-small">🔄 Sincronizza</button>
+          <span id="parentsAccountsSyncStatus" class="parents-class-default-status"></span>
+        </div>
+      </div>
+
+      <div class="parents-accounts-section">
+        <div class="parents-accounts-header">
+          <h3>📨 Richieste di accesso in sospeso</h3>
+          <p class="settings-hint">
+            Se durante l'anno un'altra email (es. di un altro familiare) prova ad accedere ai voti
+            di uno studente, comparirà qui: scegli tu a quale studente collegarla, oppure rifiutala.
+          </p>
+        </div>
+        <div id="parentsAccessRequestsList" class="parents-accounts-list"></div>
+      </div>
     </section>
 
   </main>

@@ -31,6 +31,37 @@ const FB_STUDENT_FULLNAME_FIELD = "fullName";    // identificatore stabile
 const FB_STUDENT_DISPLAY_FIELD  = "displayName"; // nome visualizzato (es. "Mario R.")
 
 // =====================================================================
+//  VISTA GENITORI — costanti
+//  IMPORTANTE: queste "const" devono stare in cima al file (non vicino al
+//  resto del codice della vista Genitori più sotto) perché il primissimo
+//  render() dell'app viene chiamato in modo sincrono da init(), molto
+//  presto nello script: se queste costanti fossero dichiarate più in
+//  basso nel file, verrebbero referenziate PRIMA di essere inizializzate
+//  ("temporal dead zone") e l'intero script si bloccherebbe con un errore,
+//  interrompendo silenziosamente anche funzionalità non correlate (es. il
+//  copia/incolla multi-cella di Valutazione).
+// =====================================================================
+
+// Le 3 scelte del docente per COME mostrare le sezioni ai genitori
+// (si applicano a tutte le sezioni della verifica, non sezione per sezione)
+const PARENT_SECTIONS_MODES = {
+  grade:     { label: "🔢 Voti delle sezioni" },
+  indicator: { label: "🟢🟡🔴 Indicatore" },
+  hidden:    { label: "— Niente" },
+};
+const PARENT_SECTIONS_MODE_ORDER = ["grade", "indicator", "hidden"];
+
+// I 3 livelli dell'indicatore, calcolati automaticamente dalla sufficienza
+// (non sono scelti dal docente: si autogenerano dal rapporto voto/max)
+const PARENT_INDICATOR_LEVELS = {
+  good: { label: "🟢 Ottimo" },
+  mid:  { label: "🟡 OK" },
+  bad:  { label: "🔴 Da migliorare" },
+};
+const PARENT_INDICATOR_GOOD_RATIO = 0.8; // ≥ 80% → 🟢 Ottimo
+const PARENT_INDICATOR_MID_RATIO = 0.6;  // ≥ 60% (sufficienza) → 🟡 OK, sotto → 🔴
+
+// =====================================================================
 //  Firebase globals
 // =====================================================================
 let fbApp = null;
@@ -112,6 +143,7 @@ const state = loadState();
 const navHomeBtn = document.getElementById("navHomeBtn");
 const navTestsBtn = document.getElementById("navTestsBtn");
 const navEvaluationBtn = document.getElementById("navEvaluationBtn");
+const navParentsBtn = document.getElementById("navParentsBtn");
 const navConfigBtn = document.getElementById("navConfigBtn");
 const resetBtn = document.getElementById("resetBtn");
 
@@ -120,6 +152,7 @@ const classView = document.getElementById("classView");
 const testsView = document.getElementById("testsView");
 const testView = document.getElementById("testView");
 const configView = document.getElementById("configView");
+const parentsView = document.getElementById("parentsView");
 
 const classList = document.getElementById("classList");
 const newClassNameInput = document.getElementById("newClassNameInput");
@@ -143,6 +176,16 @@ const testSelect = document.getElementById("testSelect");
 const testVersionSelect = document.getElementById("testVersionSelect");
 const exportBtn = document.getElementById("exportBtn");
 const gradeTable = document.getElementById("gradeTable");
+
+const parentsClassSelect = document.getElementById("parentsClassSelect");
+const parentsTestSelect = document.getElementById("parentsTestSelect");
+const parentsVersionSelect = document.getElementById("parentsVersionSelect");
+const parentsList = document.getElementById("parentsList");
+const parentsClassDefaultSelect = document.getElementById("parentsClassDefaultSelect");
+const parentsClassDefaultStatus = document.getElementById("parentsClassDefaultStatus");
+const publishParentsBtn = document.getElementById("publishParentsBtn");
+const parentsPublishStatus = document.getElementById("parentsPublishStatus");
+const parentsAccountsList = document.getElementById("parentsAccountsList");
 const warningArea = document.getElementById("warningArea");
 const facilitatedActionArea = document.getElementById("facilitatedActionArea");
 
@@ -189,6 +232,9 @@ function init() {
   navHomeBtn.addEventListener("click", () => setView("home"));
   navTestsBtn.addEventListener("click", () => setView("tests"));
   navEvaluationBtn.addEventListener("click", () => setView("test"));
+  if (navParentsBtn) {
+    navParentsBtn.addEventListener("click", () => setView("parents"));
+  }
   if (navConfigBtn) {
     navConfigBtn.addEventListener("click", () => setView("config"));
   }
@@ -241,17 +287,12 @@ function init() {
 
   testClassSelect.addEventListener("change", (event) => {
     state.selectedClassId = event.target.value;
-    // Se il test corrente non è assegnato alla nuova classe, passa all'ultimo test della classe
-    ensureTestMatchesClass();
-    ensureVersionSelections();
     saveState();
     renderTestTable();
   });
 
   testSelect.addEventListener("change", (event) => {
     state.selectedTestId = event.target.value;
-    // Se la classe corrente non è assegnata al nuovo test, passa alla prima classe del test
-    ensureClassMatchesTest();
     ensureVersionSelections();
     saveState();
     renderTestTable();
@@ -262,6 +303,40 @@ function init() {
     saveState();
     renderTestTable();
   });
+
+  if (parentsClassSelect) {
+    parentsClassSelect.addEventListener("change", (event) => {
+      state.selectedClassId = event.target.value;
+      saveState();
+      renderParentsView();
+    });
+  }
+  if (parentsTestSelect) {
+    parentsTestSelect.addEventListener("change", (event) => {
+      state.selectedTestId = event.target.value;
+      ensureVersionSelections();
+      saveState();
+      renderParentsView();
+    });
+  }
+  if (parentsVersionSelect) {
+    parentsVersionSelect.addEventListener("change", (event) => {
+      state.selectedTestVersionId = event.target.value;
+      saveState();
+      renderParentsView();
+    });
+  }
+  if (publishParentsBtn) {
+    publishParentsBtn.addEventListener("click", () => publishParentsForCurrentTest());
+  }
+  if (parentsClassDefaultSelect) {
+    parentsClassDefaultSelect.addEventListener("change", (event) => {
+      const selectedClass = getSelectedClass();
+      const selectedTest = getSelectedTest();
+      applyClassWideSectionsMode(selectedClass, selectedTest, event.target.value);
+    });
+  }
+  initParentAccountDialog();
 
   if (configTestSelect) {
     configTestSelect.addEventListener("change", (event) => {
@@ -357,35 +432,6 @@ function init() {
     const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
     if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
     refreshSuggestions();
-    // Popola i checkbox delle classi
-    const classesField = document.getElementById("newTestClassesField");
-    if (classesField) {
-      classesField.innerHTML = "";
-      if (state.classes.length === 0) {
-        classesField.innerHTML = '<p style="color:#888;font-size:.85em;">Nessuna classe disponibile — aggiungine una prima.</p>';
-      } else {
-        state.classes.forEach(cls => {
-          const lbl = document.createElement("label");
-          lbl.className = "new-test-class-row";
-          const chk = document.createElement("input");
-          chk.type = "checkbox";
-          chk.name = "newTestClass";
-          chk.value = cls.id;
-          chk.dataset.classId = cls.id;
-          const clsColor = state.settings?.classColors?.[cls.id];
-          if (clsColor) {
-            lbl.style.borderLeft = `3px solid ${clsColor}`;
-            lbl.style.paddingLeft = "8px";
-          }
-          const nameSp = document.createElement("span");
-          nameSp.textContent = cls.name;
-          lbl.appendChild(chk);
-          lbl.appendChild(nameSp);
-          classesField.appendChild(lbl);
-        });
-      }
-    }
-    document.getElementById("newTestClassError").style.display = "none";
     newTestDialog.showModal();
   });
 
@@ -429,16 +475,7 @@ function init() {
       const subject = newTestSubjectInput.value.trim();
       const newTestCategoryInput = document.getElementById("newTestCategoryInput");
       const category = newTestCategoryInput ? newTestCategoryInput.value.trim() : "";
-      // Valida classi: almeno una richiesta
-      const checkedClasses = Array.from(
-        document.querySelectorAll('#newTestClassesField input[type="checkbox"]:checked')
-      ).map(cb => cb.value);
-      if (checkedClasses.length === 0) {
-        document.getElementById("newTestClassError").style.display = "";
-        return;
-      }
       const newTest = createTest(name, subject, category);
-      newTest.classIds = checkedClasses;
       state.tests.push(newTest);
       state.selectedTestId = newTest.id;
       state.selectedTestVersionId = newTest.versions[0]?.id ?? null;
@@ -614,6 +651,7 @@ function render() {
     renderConfig();
   }
   renderTestTable();
+  renderParentsView();
   updateView();
 }
 
@@ -624,7 +662,7 @@ function setView(view) {
 }
 
 function updateView() {
-  const views = [homeView, classView, testsView, testView, configView].filter(Boolean);
+  const views = [homeView, classView, testsView, testView, configView, parentsView].filter(Boolean);
   views.forEach((view) => view.classList.remove("active"));
 
   if (state.view === "config" && !configView) {
@@ -640,6 +678,14 @@ function updateView() {
       break;
     case "test":
       testView.classList.add("active");
+      break;
+    case "parents":
+      if (parentsView) {
+        parentsView.classList.add("active");
+        renderParentsAccountsList();
+      } else {
+        homeView.classList.add("active");
+      }
       break;
     case "config":
       if (configView) {
@@ -984,16 +1030,11 @@ function renderTestsList() {
     info.style.color = "#888";
     card.appendChild(info);
 
-    // Spacer per spingere i controlli in basso nella card
-    const spacer = document.createElement("div");
-    spacer.style.flex = "1";
-    card.appendChild(spacer);
-
-    // ── Pannello "Modifica" (toggle) ──────────────────────────────────────
+    // ── Pannello "Modifica dettagli" ──────────────────────────────────────
     const detailsToggle = document.createElement("button");
     detailsToggle.className = "btn btn-secondary btn-small";
-    detailsToggle.style.cssText = "font-size:.8em;";
-    detailsToggle.textContent = "✏️ Modifica";
+    detailsToggle.style.cssText = "margin-top:8px;font-size:.8em;";
+    detailsToggle.textContent = "✏️ Modifica dettagli";
 
     const detailsPanel = document.createElement("div");
     detailsPanel.className = "test-details-panel";
@@ -1148,18 +1189,16 @@ function renderTestsList() {
     detailsToggle.addEventListener("click", () => {
       const open = detailsPanel.style.display === "block";
       detailsPanel.style.display = open ? "none" : "block";
-      detailsToggle.textContent = open ? "✏️ Modifica" : "▲ Chiudi";
+      detailsToggle.textContent = open ? "✏️ Modifica dettagli" : "▲ Chiudi";
     });
 
+    card.appendChild(detailsToggle);
     card.appendChild(detailsPanel);
 
     // ── Azioni principali ─────────────────────────────────────────────────
     const actions = document.createElement("div");
     actions.classList.add("panel-actions");
     actions.style.marginTop = "10px";
-
-    // Aggiungi il toggle Modifica qui in modo che stia sulla stessa riga di Valuta
-    actions.appendChild(detailsToggle);
 
     const evalBtn = document.createElement("button");
     evalBtn.classList.add("btn", "btn-secondary");
@@ -1296,17 +1335,21 @@ function renderSettingsDialog() {
   }
 
   const doAddSubject = () => {
-    const inp = document.getElementById("newSubjectInput");
-    const val = inp.value.trim();
+    const val = newSubjectInput.value.trim();
     if (!val || state.settings.subjects.includes(val)) return;
     state.settings.subjects.push(val);
-    inp.value = "";
+    newSubjectInput.value = "";
     saveState();
     renderSubjectsList();
     refreshSuggestions();
   };
-  document.getElementById("newSubjectInput").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); doAddSubject(); } };
-  document.getElementById("addSubjectBtn").onclick = doAddSubject;
+  // Remove old listeners by cloning
+  const newSubjectInputClone = newSubjectInput.cloneNode(true);
+  newSubjectInput.replaceWith(newSubjectInputClone);
+  const addSubjectBtnClone = addSubjectBtn.cloneNode(true);
+  addSubjectBtn.replaceWith(addSubjectBtnClone);
+  document.getElementById("newSubjectInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddSubject(); } });
+  document.getElementById("addSubjectBtn").addEventListener("click", doAddSubject);
   renderSubjectsList();
 
   // ── Categorie ─────────────────────────────────────────────
@@ -1338,17 +1381,20 @@ function renderSettingsDialog() {
   }
 
   const doAddCategory = () => {
-    const inp = document.getElementById("newCategoryInput");
-    const val = inp.value.trim();
+    const val = newCategoryInput.value.trim();
     if (!val || state.settings.categories.includes(val)) return;
     state.settings.categories.push(val);
-    inp.value = "";
+    newCategoryInput.value = "";
     saveState();
     renderCategoriesList();
     refreshSuggestions();
   };
-  document.getElementById("newCategoryInput").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } };
-  document.getElementById("addCategoryBtn").onclick = doAddCategory;
+  const newCategoryInputClone = newCategoryInput.cloneNode(true);
+  newCategoryInput.replaceWith(newCategoryInputClone);
+  const addCategoryBtnClone = addCategoryBtn.cloneNode(true);
+  addCategoryBtn.replaceWith(addCategoryBtnClone);
+  document.getElementById("newCategoryInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } });
+  document.getElementById("addCategoryBtn").addEventListener("click", doAddCategory);
   renderCategoriesList();
 
   // ── Colori classi ─────────────────────────────────────────
@@ -2322,39 +2368,6 @@ function createScoreInput(
     }
   });
 
-  // Incolla colonna da Excel: se il testo incollato contiene più righe,
-  // distribuisce i valori verso il basso nella stessa colonna
-  input.addEventListener("paste", (event) => {
-    const text = (event.clipboardData || window.clipboardData).getData("text");
-    const lines = text.split(/\r?\n/).map((v) => v.trim()).filter((v) => v !== "");
-    if (lines.length <= 1) return; // Incolla normale per un solo valore
-
-    event.preventDefault();
-
-    const cell = input.closest("td");
-    const row = cell.closest("tr");
-    const cellIndex = Array.from(row.children).indexOf(cell);
-    const tbody = row.closest("tbody");
-    if (!tbody) return;
-    const rows = Array.from(tbody.children);
-    const startRowIdx = rows.indexOf(row);
-
-    lines.forEach((val, i) => {
-      const targetRow = rows[startRowIdx + i];
-      if (!targetRow) return;
-      const targetCell = targetRow.children[cellIndex];
-      if (!targetCell) return;
-      const targetInput = targetCell.querySelector("input[type='number']");
-      if (!targetInput || targetInput.disabled) return;
-      // Sostituisce la virgola con il punto (separatore decimale italiano)
-      targetInput.value = val.replace(",", ".");
-      targetInput.dispatchEvent(new Event("input", { bubbles: false }));
-    });
-
-    saveState();
-    renderTestTable();
-  });
-
   // Inizializza la multi-selezione per questo input
   initializeInputSelection(input);
 
@@ -2816,6 +2829,7 @@ function createStudent() {
     name: "New Student",
     scores: {},
     testVersions: {},
+    parentConfig: {},
   };
 }
 
@@ -2907,6 +2921,7 @@ function saveState() {
     studentTestVersions: buildStudentTestVersionsMap(),
     studentFacilitated: buildStudentFacilitatedMap(),
     studentChecks: buildStudentChecksMap(),
+    studentParentConfig: buildStudentParentConfigMap(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
 
@@ -2937,6 +2952,7 @@ function saveGradingToFirebase() {
     facilitated: buildStudentFacilitatedMap(),
     testVersions: buildStudentTestVersionsMap(),
     checks: buildStudentChecksMap(),
+    parentConfig: buildStudentParentConfigMap(),
     savedAt: Date.now(),
   };
   fbDb.ref(path).set(data)
@@ -3002,6 +3018,20 @@ function buildStudentChecksMap() {
   return map;
 }
 
+/** Costruisce una mappa { studentId: { testId: { sections, generalComment, published, publishedAt } } }
+ *  con le impostazioni della vista Genitori (voto/indicatore/niente per sezione + commento). */
+function buildStudentParentConfigMap() {
+  const map = {};
+  state.classes.forEach((cls) => {
+    cls.students.forEach((student) => {
+      if (student.parentConfig && Object.keys(student.parentConfig).length > 0) {
+        map[student.id] = student.parentConfig;
+      }
+    });
+  });
+  return map;
+}
+
 
 
 function loadState() {
@@ -3057,6 +3087,7 @@ function loadState() {
     const studentTestVersions = parsed.studentTestVersions ?? {};
     const studentFacilitated = parsed.studentFacilitated ?? {};
     const studentChecks = parsed.studentChecks ?? {};
+    const studentParentConfig = parsed.studentParentConfig ?? {};
 
     // Applica i dati salvati agli studenti già presenti (formato vecchio)
     classes.forEach((cls) => {
@@ -3064,6 +3095,7 @@ function loadState() {
         if (!student.scores) student.scores = {};
         if (!student.testVersions) student.testVersions = {};
         if (!student.checks) student.checks = {};
+        if (!student.parentConfig) student.parentConfig = {};
         if (studentScores[student.id]) {
           Object.assign(student.scores, studentScores[student.id]);
         }
@@ -3072,6 +3104,9 @@ function loadState() {
         }
         if (studentChecks[student.id]) {
           Object.assign(student.checks, studentChecks[student.id]);
+        }
+        if (studentParentConfig[student.id]) {
+          Object.assign(student.parentConfig, studentParentConfig[student.id]);
         }
         if (studentFacilitated[student.id]) {
           student.facilitated = true;
@@ -3097,6 +3132,7 @@ function loadState() {
       _studentTestVersions: studentTestVersions,
       _studentFacilitated: studentFacilitated,
       _studentChecks: studentChecks,
+      _studentParentConfig: studentParentConfig,
     };
 
     tests.forEach((testItem) => {
@@ -3237,43 +3273,6 @@ function ensureTestState() {
     state.selectedTestId = state.tests[0]?.id ?? null;
   }
   ensureVersionSelections();
-  // Assicura che la classe selezionata abbia questa verifica assegnata
-  ensureClassMatchesTest();
-}
-
-/**
- * Se la classe selezionata non è tra quelle a cui la verifica è assegnata,
- * passa automaticamente alla prima classe valida per quella verifica.
- * Non fa nulla se il test non ha classIds (backward compat).
- */
-function ensureClassMatchesTest() {
-  const test = getSelectedTest();
-  if (!test || !Array.isArray(test.classIds) || test.classIds.length === 0) return;
-  if (test.classIds.includes(state.selectedClassId)) return;
-  // Trova la prima classe valida presente nello stato
-  const firstValid = state.classes.find(c => test.classIds.includes(c.id));
-  if (firstValid) {
-    state.selectedClassId = firstValid.id;
-  }
-}
-
-/**
- * Se il test selezionato non è assegnato alla classe corrente,
- * passa all'ultimo test assegnato a quella classe.
- * Non fa nulla se nessun test è assegnato alla classe.
- */
-function ensureTestMatchesClass() {
-  const classId = state.selectedClassId;
-  const currentTest = getSelectedTest();
-  // Se il test corrente include già la classe, va bene
-  if (currentTest && (currentTest.classIds || []).includes(classId)) return;
-  // Cerca l'ultimo test (in ordine array inverso) che include questa classe
-  const testsForClass = [...state.tests].reverse().filter(
-    t => Array.isArray(t.classIds) && t.classIds.includes(classId)
-  );
-  if (testsForClass.length > 0) {
-    state.selectedTestId = testsForClass[0].id;
-  }
 }
 
 function generateClassName() {
@@ -3479,24 +3478,12 @@ function applyFirebaseGrading(data) {
     state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
   }
 
-  // Ripristina le impostazioni (materie, categorie, colori classi)
-  if (data.settings && typeof data.settings === 'object') {
-    // Normalizza subjects e categories: Firebase può trasformare array in oggetti {"0":…}
-    const subjects = Array.isArray(data.settings.subjects)
-      ? data.settings.subjects
-      : (data.settings.subjects ? Object.values(data.settings.subjects) : []);
-    const categories = Array.isArray(data.settings.categories)
-      ? data.settings.categories
-      : (data.settings.categories ? Object.values(data.settings.categories) : []);
-    const classColors = data.settings.classColors || {};
-    state.settings = { ...state.settings, subjects, categories, classColors };
-  }
-
   // Memorizza le mappe in state così mergeFirebaseClasses le userà
   state._studentScores = data.scores || {};
   state._studentTestVersions = data.testVersions || {};
   state._studentFacilitated = data.facilitated || {};
   state._studentChecks = data.checks || {};
+  state._studentParentConfig = data.parentConfig || {};
 
   // Applica subito agli studenti già caricati
   state.classes.forEach((cls) => {
@@ -3509,6 +3496,9 @@ function applyFirebaseGrading(data) {
       }
       if (state._studentChecks[student.id]) {
         student.checks = state._studentChecks[student.id];
+      }
+      if (state._studentParentConfig[student.id]) {
+        student.parentConfig = state._studentParentConfig[student.id];
       }
       student.facilitated = state._studentFacilitated[student.id] === true;
     });
@@ -3530,6 +3520,7 @@ function mergeFirebaseClasses(fbData) {
   const studentTestVersions = state._studentTestVersions || buildStudentTestVersionsMap();
   const studentFacilitated = state._studentFacilitated || buildStudentFacilitatedMap();
   const studentChecks = state._studentChecks || buildStudentChecksMap();
+  const studentParentConfig = state._studentParentConfig || buildStudentParentConfigMap();
 
   // Firebase converte gli array JS in oggetti { "0": {...}, "1": {...} }
   const rawClasses = Array.isArray(fbData) ? fbData : Object.values(fbData);
@@ -3570,6 +3561,7 @@ function mergeFirebaseClasses(fbData) {
             testVersions: studentTestVersions[studentId] || {},
             facilitated: studentFacilitated[studentId] === true,
             checks: studentChecks[studentId] || {},
+            parentConfig: studentParentConfig[studentId] || {},
           };
         });
 
@@ -3597,6 +3589,560 @@ function setFirebaseStatus(message, type = "info") {
 
 // Le classi sono read-only da classroomanager — non scriviamo su Firebase
 function saveClassesToFirebase() {}
+
+// =====================================================================
+//  VISTA GENITORI
+//  Per ogni studente e per ogni sezione della verifica, l'insegnante
+//  sceglie cosa vedrà il genitore: voto numerico, un indicatore
+//  (🟢/🟡/🔴) oppure niente. Le modifiche si salvano da sole (bozza),
+//  ma il genitore vede i dati SOLO dopo aver premuto "Pubblica".
+//
+//  Percorsi Firebase usati in aggiunta a /users/{uid}/...:
+//    /publishedGrades/{teacherUid}/{testId}/{studentId}   → snapshot pubblicato (letto dai genitori)
+//    /parentAccounts/{parentUid}                          → { teacherUid, studentId, classId, email }
+//    /parentAccountsByTeacher/{teacherUid}/{parentUid}     → stesso oggetto, indicizzato per l'insegnante
+//  Le regole di sicurezza da aggiungere al Realtime Database sono
+//  descritte in FIREBASE_SETUP.md.
+// =====================================================================
+
+// Le 3 scelte del docente per COME mostrare le sezioni ai genitori, e i 3 livelli
+// dell'indicatore (PARENT_SECTIONS_MODES, PARENT_INDICATOR_LEVELS, ecc.) sono
+// dichiarati in cima al file: essendo "const", devono esistere già la primissima
+// volta che renderParentsView() viene chiamata durante l'avvio dell'app.
+
+/** Calcola automaticamente il livello dell'indicatore (good/mid/bad) dal
+ *  rapporto voto/massimo della sezione, in base alla sufficienza (60%). */
+function computeIndicatorLevel(score, max) {
+  const numericMax = Number(max) || 0;
+  if (numericMax <= 0) return "mid";
+  const ratio = (Number(score) || 0) / numericMax;
+  if (ratio >= PARENT_INDICATOR_GOOD_RATIO) return "good";
+  if (ratio >= PARENT_INDICATOR_MID_RATIO) return "mid";
+  return "bad";
+}
+
+/** Il "default" per le sezioni è memorizzato sulla verifica stessa (si sincronizza
+ *  già con state.tests) e vale come punto di partenza per tutta la classe. */
+function getTestParentSectionsDefaultMode(test) {
+  return (test && PARENT_SECTIONS_MODES[test.parentSectionsDefaultMode]) ? test.parentSectionsDefaultMode : "grade";
+}
+
+function setTestParentSectionsDefaultMode(test, mode) {
+  if (!test) return;
+  test.parentSectionsDefaultMode = mode;
+  saveState();
+}
+
+/** Applica la modalità scelta in alto a TUTTI gli studenti della classe per questa
+ *  verifica (e la ricorda come default per eventuali nuovi studenti). Dopo
+ *  l'applicazione, l'insegnante può comunque cambiare la scelta per un singolo alunno. */
+function applyClassWideSectionsMode(selectedClass, selectedTest, mode) {
+  if (!selectedClass || !selectedTest) return;
+  setTestParentSectionsDefaultMode(selectedTest, mode);
+  selectedClass.students.forEach((student) => {
+    const cfg = ensureParentConfigStore(student, selectedTest.id);
+    cfg.sectionsMode = mode;
+  });
+  saveState();
+  renderParentsView();
+}
+
+/** Garantisce che lo studente abbia una configurazione "genitori" per questo test;
+ *  la prima volta la pre-compila con i commenti già scritti in Valutazione
+ *  (l'insegnante potrà comunque modificarli o cancellarli liberamente). */
+function ensureParentConfigStore(student, testId) {
+  if (!student.parentConfig) student.parentConfig = {};
+  if (!student.parentConfig[testId]) {
+    const test = state.tests.find((t) => t.id === testId);
+    student.parentConfig[testId] = {
+      sectionsMode: getTestParentSectionsDefaultMode(test),
+      generalComment: collectSectionCommentsText(student, testId),
+      published: false,
+      publishedAt: null,
+    };
+  }
+  const cfg = student.parentConfig[testId];
+  // Migrazione da una vecchia configurazione per-sezione: torna al default "grade"
+  if (!cfg.sectionsMode) cfg.sectionsMode = "grade";
+  if (typeof cfg.generalComment !== "string") cfg.generalComment = "";
+  return cfg;
+}
+
+function getParentSectionsMode(student, testId) {
+  return ensureParentConfigStore(student, testId).sectionsMode;
+}
+
+function setParentSectionsMode(student, testId, mode) {
+  const cfg = ensureParentConfigStore(student, testId);
+  cfg.sectionsMode = mode;
+  saveState();
+}
+
+/** Raccoglie in un unico testo i commenti già inseriti in Valutazione per questo test,
+ *  sezione per sezione (comprese le sottosezioni). Usato per pre-compilare/rigenerare
+ *  il commento generale per i genitori. */
+function collectSectionCommentsText(student, testId) {
+  const test = state.tests.find((t) => t.id === testId);
+  if (!test) return "";
+  const version =
+    getVersionById(test, getStudentVersionId(student, testId, getDefaultVersion(test)?.id)) ??
+    getDefaultVersion(test);
+  const lines = [];
+  (version?.sections ?? []).forEach((section) => {
+    const sectionScores = student.scores?.[testId]?.[section.id];
+    if (!sectionScores?.comments) return;
+    const directComment = sectionScores.comments.direct;
+    if (directComment) lines.push(`${section.name}: ${directComment}`);
+    (section.subsections ?? []).forEach((sub) => {
+      const c = sectionScores.comments[sub.id];
+      if (c) lines.push(`${section.name} — ${sub.name}: ${c}`);
+    });
+  });
+  return lines.join("\n");
+}
+
+function formatPublishDate(timestamp) {
+  if (!timestamp) return "";
+  try {
+    return new Date(timestamp).toLocaleString("it-IT", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+  } catch (e) {
+    return "";
+  }
+}
+
+function renderParentsView() {
+  if (!parentsList) return;
+
+  const selectedClass = getSelectedClass();
+  const selectedTest = getSelectedTest();
+
+  if (parentsClassSelect) {
+    parentsClassSelect.innerHTML = "";
+    state.classes.forEach((classItem) => {
+      const option = document.createElement("option");
+      option.value = classItem.id;
+      option.textContent = classItem.name || "Classe";
+      if (classItem.id === state.selectedClassId) option.selected = true;
+      parentsClassSelect.appendChild(option);
+    });
+  }
+
+  if (parentsTestSelect) {
+    parentsTestSelect.innerHTML = "";
+    state.tests.forEach((test) => {
+      const option = document.createElement("option");
+      option.value = test.id;
+      option.textContent = test.title || "Verifica";
+      if (test.id === state.selectedTestId) option.selected = true;
+      parentsTestSelect.appendChild(option);
+    });
+  }
+
+  parentsList.innerHTML = "";
+
+  if (!selectedTest || !selectedClass) {
+    if (parentsVersionSelect) parentsVersionSelect.innerHTML = "";
+    if (parentsPublishStatus) parentsPublishStatus.textContent = "";
+    if (parentsClassDefaultSelect) parentsClassDefaultSelect.innerHTML = "";
+    if (parentsClassDefaultStatus) parentsClassDefaultStatus.textContent = "";
+    return;
+  }
+
+  ensureTestVersions(selectedTest);
+  ensureVersionSelections();
+
+  if (parentsVersionSelect) {
+    parentsVersionSelect.innerHTML = "";
+    selectedTest.versions.forEach((version) => {
+      const option = document.createElement("option");
+      option.value = version.id;
+      option.textContent = version.name || "Versione";
+      if (version.id === state.selectedTestVersionId) option.selected = true;
+      parentsVersionSelect.appendChild(option);
+    });
+  }
+
+  const defaultVersion = getDefaultVersion(selectedTest);
+  const students = selectedClass.students ?? [];
+  const facilitatedVersionId = getFacilitatedVersionId(selectedTest);
+
+  if (parentsClassDefaultSelect) {
+    const testDefaultMode = getTestParentSectionsDefaultMode(selectedTest);
+    parentsClassDefaultSelect.innerHTML = "";
+    PARENT_SECTIONS_MODE_ORDER.forEach((modeKey) => {
+      const opt = document.createElement("option");
+      opt.value = modeKey;
+      opt.textContent = PARENT_SECTIONS_MODES[modeKey].label;
+      parentsClassDefaultSelect.appendChild(opt);
+    });
+    parentsClassDefaultSelect.value = testDefaultMode;
+    parentsClassDefaultSelect.className = "parent-mode-select mode-" + testDefaultMode;
+  }
+  if (parentsClassDefaultStatus) {
+    parentsClassDefaultStatus.textContent = students.length
+      ? `si applica subito a tutti e ${students.length} gli studenti di ${selectedClass.name}`
+      : "";
+  }
+
+  students.forEach((student) => {
+    const isFacilitated = student.facilitated === true;
+    const effectiveVersionId = isFacilitated && facilitatedVersionId
+      ? facilitatedVersionId
+      : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
+    const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
+
+    const cfg = ensureParentConfigStore(student, selectedTest.id);
+
+    const card = document.createElement("div");
+    card.className = "parent-student-card";
+    if (cfg.published) card.classList.add("is-published");
+
+    // — Intestazione —
+    const head = document.createElement("div");
+    head.className = "parent-student-head";
+    const nameEl = document.createElement("span");
+    nameEl.className = "parent-student-name";
+    nameEl.textContent = student.name || "Studente";
+    head.appendChild(nameEl);
+    if (isFacilitated) {
+      const badge = document.createElement("span");
+      badge.className = "badge badge-facilitated";
+      badge.textContent = "DSA/104";
+      head.appendChild(badge);
+    }
+    const statusEl = document.createElement("span");
+    statusEl.className = "parent-publish-badge" + (cfg.published ? " is-published" : "");
+    statusEl.textContent = cfg.published
+      ? `✅ Pubblicato il ${formatPublishDate(cfg.publishedAt)}`
+      : "⚪ Non ancora pubblicato";
+    head.appendChild(statusEl);
+    card.appendChild(head);
+
+    // — Voto finale: SEMPRE visibile —
+    const finalWrap = document.createElement("div");
+    finalWrap.className = "parent-teacher-final";
+    const finalLabel = document.createElement("span");
+    finalLabel.className = "parent-teacher-final-label";
+    finalLabel.textContent = "Voto finale";
+    const finalValue = document.createElement("span");
+    finalValue.className = "parent-teacher-final-value";
+    finalValue.textContent = `${formatScore(getFinalScore(student, selectedTest, version))} / 10`;
+    finalWrap.appendChild(finalLabel);
+    finalWrap.appendChild(finalValue);
+    card.appendChild(finalWrap);
+
+    // — Cosa vedrà il genitore per le sezioni: UNA scelta valida per tutte —
+    const sectionsModeRow = document.createElement("div");
+    sectionsModeRow.className = "parent-sections-mode-row";
+    const sectionsModeLabel = document.createElement("span");
+    sectionsModeLabel.className = "parent-sections-mode-label";
+    sectionsModeLabel.textContent = "Il genitore vede, per le sezioni:";
+    sectionsModeRow.appendChild(sectionsModeLabel);
+
+    const modeSelect = document.createElement("select");
+    const currentSectionsMode = getParentSectionsMode(student, selectedTest.id);
+    modeSelect.className = "parent-mode-select mode-" + currentSectionsMode;
+    PARENT_SECTIONS_MODE_ORDER.forEach((modeKey) => {
+      const opt = document.createElement("option");
+      opt.value = modeKey;
+      opt.textContent = PARENT_SECTIONS_MODES[modeKey].label;
+      modeSelect.appendChild(opt);
+    });
+    modeSelect.value = currentSectionsMode;
+    modeSelect.addEventListener("change", (e) => {
+      setParentSectionsMode(student, selectedTest.id, e.target.value);
+      modeSelect.className = "parent-mode-select mode-" + e.target.value;
+    });
+    sectionsModeRow.appendChild(modeSelect);
+    card.appendChild(sectionsModeRow);
+
+    // — Voti di sezione: SEMPRE visibili al prof, in piccolo e a basso contrasto
+    //   (indipendentemente da cosa vedrà il genitore) —
+    const sections = version?.sections ?? [];
+    if (sections.length > 0) {
+      const hintList = document.createElement("div");
+      hintList.className = "parent-teacher-section-hints";
+      sections.forEach((section) => {
+        const sectionScore = getSectionScore(student, selectedTest, section);
+        const sectionMax = getSectionMax(section);
+        const level = computeIndicatorLevel(sectionScore, sectionMax);
+        const hint = document.createElement("span");
+        hint.className = "parent-teacher-section-hint level-" + level;
+        hint.textContent = `${section.name || "Sezione"}: ${formatScore(sectionScore)}/${formatScore(sectionMax)}`;
+        hint.title = `Se mostrato come indicatore: ${PARENT_INDICATOR_LEVELS[level].label}`;
+        hintList.appendChild(hint);
+      });
+      card.appendChild(hintList);
+    }
+
+    // — Commento generale: SEMPRE visibile —
+    const commentWrap = document.createElement("div");
+    commentWrap.className = "parent-comment-wrap";
+    const commentLabel = document.createElement("label");
+    commentLabel.textContent = "💬 Commento generale (visibile al genitore)";
+    commentWrap.appendChild(commentLabel);
+    const textarea = document.createElement("textarea");
+    textarea.rows = 3;
+    textarea.className = "parent-comment-textarea";
+    textarea.placeholder = "Commento libero per la famiglia…";
+    textarea.value = cfg.generalComment || "";
+    textarea.addEventListener("change", (e) => {
+      cfg.generalComment = e.target.value;
+      saveState();
+    });
+    commentWrap.appendChild(textarea);
+
+    // Il bottone "Rigenera" compare solo se esistono davvero commenti di sezione da recuperare
+    const availableComments = collectSectionCommentsText(student, selectedTest.id);
+    if (availableComments) {
+      const regenBtn = document.createElement("button");
+      regenBtn.type = "button";
+      regenBtn.className = "btn btn-secondary btn-small parent-regen-btn";
+      regenBtn.textContent = "🔄 Rigenera dai commenti di Valutazione";
+      regenBtn.title = "Sovrascrive il commento generale con i commenti di sezione/sottosezione già scritti in Valutazione";
+      regenBtn.addEventListener("click", () => {
+        cfg.generalComment = availableComments;
+        textarea.value = availableComments;
+        saveState();
+      });
+      commentWrap.appendChild(regenBtn);
+    }
+    card.appendChild(commentWrap);
+
+    // — Accesso genitore per questo studente —
+    const accountRow = document.createElement("div");
+    accountRow.className = "parent-account-row";
+    const accountBtn = document.createElement("button");
+    accountBtn.type = "button";
+    accountBtn.className = "btn btn-secondary btn-small";
+    accountBtn.textContent = "🔑 Crea accesso genitore";
+    accountBtn.addEventListener("click", () => openParentAccountDialog(student, selectedClass));
+    accountRow.appendChild(accountBtn);
+    card.appendChild(accountRow);
+
+    parentsList.appendChild(card);
+  });
+
+  if (parentsPublishStatus) {
+    parentsPublishStatus.textContent = students.length
+      ? `${students.length} studenti · le scelte si salvano da sole, i genitori le vedono solo dopo "Pubblica"`
+      : "Nessuno studente in questa classe.";
+  }
+}
+
+/** Pubblica lo stato attuale (voti/indicatori/commenti) per tutti gli studenti
+ *  della classe selezionata, per la verifica selezionata. Scrive uno snapshot
+ *  "appiattito" su /publishedGrades/{uid}/{testId}/{studentId}, che i genitori
+ *  collegati possono leggere senza avere accesso al resto dei dati. */
+function publishParentsForCurrentTest() {
+  if (!fbDb || !fbUser) {
+    alert("Devi essere connesso con Google per pubblicare i dati per i genitori.");
+    return;
+  }
+  const selectedClass = getSelectedClass();
+  const selectedTest = getSelectedTest();
+  if (!selectedClass || !selectedTest) return;
+
+  if (!confirm(`Pubblicare i dati di "${selectedTest.title}" per ${selectedClass.students.length} studenti della classe ${selectedClass.name}?\n\nI genitori collegati potranno vederli da subito.`)) {
+    return;
+  }
+
+  const defaultVersion = getDefaultVersion(selectedTest);
+  const facilitatedVersionId = getFacilitatedVersionId(selectedTest);
+  const now = Date.now();
+  const updates = {};
+
+  selectedClass.students.forEach((student) => {
+    const isFacilitated = student.facilitated === true;
+    const effectiveVersionId = isFacilitated && facilitatedVersionId
+      ? facilitatedVersionId
+      : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
+    const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
+    const cfg = ensureParentConfigStore(student, selectedTest.id);
+    const sectionsMode = cfg.sectionsMode;
+
+    // Se il genitore non deve vedere le sezioni, non pubblichiamo alcun dato di
+    // sezione (non solo "nascosto in UI": proprio assente dallo snapshot).
+    const sectionsOut = sectionsMode === "hidden"
+      ? []
+      : (version?.sections ?? []).map((section) => {
+          const rawScore = getSectionScore(student, selectedTest, section);
+          const rawMax = getSectionMax(section);
+          if (sectionsMode === "grade") {
+            return {
+              name: section.name || "Sezione",
+              mode: "grade",
+              score: formatScore(rawScore),
+              max: formatScore(rawMax),
+            };
+          }
+          // sectionsMode === "indicator": il livello si autogenera dalla sufficienza,
+          // non pubblichiamo il voto grezzo della sezione.
+          return {
+            name: section.name || "Sezione",
+            mode: computeIndicatorLevel(rawScore, rawMax),
+          };
+        });
+
+    const snapshot = {
+      testId: selectedTest.id,
+      studentName: student.name || "",
+      className: selectedClass.name || "",
+      testTitle: selectedTest.title || "",
+      subject: selectedTest.subject || "",
+      finalScore: formatScore(getFinalScore(student, selectedTest, version)),
+      sections: sectionsOut,
+      generalComment: cfg.generalComment || "",
+      publishedAt: now,
+    };
+
+    updates[`/publishedGrades/${fbUser.uid}/${student.id}/${selectedTest.id}`] = snapshot;
+    cfg.published = true;
+    cfg.publishedAt = now;
+  });
+
+  fbDb.ref().update(updates)
+    .then(() => {
+      saveState();
+      renderParentsView();
+      setFirebaseStatus("🟢 Dati pubblicati per i genitori");
+    })
+    .catch((err) => {
+      alert("Errore durante la pubblicazione: " + err.message);
+    });
+}
+
+// ── Accessi genitori (email + password) ──────────────────────────────
+
+let parentAccountDialogContext = null;
+
+function initParentAccountDialog() {
+  const dialog = document.getElementById("parentAccountDialog");
+  if (!dialog) return;
+  const cancelBtn = document.getElementById("parentAccountCancelBtn");
+  const createBtn = document.getElementById("parentAccountCreateBtn");
+  const genPwBtn = document.getElementById("parentAccountGeneratePwBtn");
+
+  cancelBtn?.addEventListener("click", () => dialog.close());
+  genPwBtn?.addEventListener("click", () => {
+    document.getElementById("parentAccountPasswordInput").value = generateRandomPassword();
+  });
+  createBtn?.addEventListener("click", () => {
+    const email = document.getElementById("parentAccountEmailInput").value.trim();
+    const password = document.getElementById("parentAccountPasswordInput").value;
+    const errorEl = document.getElementById("parentAccountError");
+    errorEl.style.display = "none";
+    if (!email || !password || password.length < 6) {
+      errorEl.textContent = "Inserisci un'email valida e una password di almeno 6 caratteri.";
+      errorEl.style.display = "";
+      return;
+    }
+    if (!parentAccountDialogContext) return;
+    createBtn.disabled = true;
+    createParentAccount(email, password, parentAccountDialogContext.student, parentAccountDialogContext.classItem)
+      .then(() => {
+        createBtn.disabled = false;
+        dialog.close();
+        alert(`Accesso creato per ${parentAccountDialogContext.student.name}.\n\nComunica alla famiglia:\nEmail: ${email}\nPassword: ${password}\nPagina: genitori.html`);
+        renderParentsAccountsList();
+      })
+      .catch((err) => {
+        createBtn.disabled = false;
+        errorEl.textContent = "Errore: " + err.message;
+        errorEl.style.display = "";
+      });
+  });
+}
+
+function generateRandomPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+function openParentAccountDialog(student, classItem) {
+  parentAccountDialogContext = { student, classItem };
+  document.getElementById("parentAccountStudentLabel").textContent =
+    `Per: ${student.name} — classe ${classItem?.name || ""}`;
+  document.getElementById("parentAccountEmailInput").value = "";
+  document.getElementById("parentAccountPasswordInput").value = "";
+  document.getElementById("parentAccountError").style.display = "none";
+  document.getElementById("parentAccountDialog").showModal();
+}
+
+/** Crea un account Firebase (email+password) per un genitore usando una
+ *  app Firebase "secondaria": così l'insegnante NON viene sloggato dalla
+ *  propria sessione. Scrive poi il collegamento genitore → studente. */
+function createParentAccount(email, password, student, classItem) {
+  if (!fbUser) return Promise.reject(new Error("Devi essere connesso come insegnante."));
+
+  let secondaryApp;
+  try {
+    secondaryApp = firebase.app("Secondary");
+  } catch (e) {
+    secondaryApp = firebase.initializeApp(FIREBASE_CONFIG, "Secondary");
+  }
+  const secondaryAuth = secondaryApp.auth();
+
+  return secondaryAuth.createUserWithEmailAndPassword(email, password)
+    .then((cred) => {
+      const parentUid = cred.user.uid;
+      const link = {
+        teacherUid: fbUser.uid,
+        studentId: student.id,
+        studentName: student.name || "",
+        classId: classItem?.id || "",
+        className: classItem?.name || "",
+        email,
+        createdAt: Date.now(),
+      };
+      const updates = {};
+      updates[`/parentAccounts/${parentUid}`] = link;
+      updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = link;
+      return fbDb.ref().update(updates).finally(() => secondaryAuth.signOut());
+    });
+}
+
+/** Elenca gli accessi genitori già creati da questo insegnante (sola lettura). */
+function renderParentsAccountsList() {
+  if (!parentsAccountsList || !fbDb || !fbUser) return;
+  fbDb.ref(`/parentAccountsByTeacher/${fbUser.uid}`).once("value")
+    .then((snapshot) => {
+      const data = snapshot.val();
+      parentsAccountsList.innerHTML = "";
+      if (!data) {
+        parentsAccountsList.innerHTML = `<p class="settings-hint">Nessun accesso genitore creato finora.</p>`;
+        return;
+      }
+      Object.values(data)
+        .sort((a, b) => (a.studentName || "").localeCompare(b.studentName || "", "it"))
+        .forEach((link) => {
+          const row = document.createElement("div");
+          row.className = "parent-account-item";
+          row.innerHTML =
+            `<strong>${escapeHtml(link.studentName)}</strong> ` +
+            `<span class="parent-account-class">${escapeHtml(link.className || "")}</span> — ` +
+            `<span class="parent-account-email">${escapeHtml(link.email)}</span>`;
+          parentsAccountsList.appendChild(row);
+        });
+    })
+    .catch((err) => {
+      parentsAccountsList.innerHTML =
+        `<p class="settings-hint">Impossibile caricare gli accessi (${escapeHtml(err.message)}). Controlla le regole del Realtime Database — vedi FIREBASE_SETUP.md.</p>`;
+    });
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 // =====================================================================
 //  MULTI-SELECTION & COPY/PASTE FUNCTIONALITY
