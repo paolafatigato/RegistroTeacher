@@ -120,7 +120,6 @@ body {
   flex-wrap: wrap;
   gap: 12px;
   align-items: flex-end;
-  margin-bottom: 16px;
 }
 
   .btn-classroom {
@@ -1058,6 +1057,33 @@ body {
   white-space: nowrap;
 }
 
+/* Riga azioni della card verifica: matita + Valuta + Configura + Archivia,
+   sempre ancorata in fondo (le card nella stessa riga del grid hanno la
+   stessa altezza per via dello stretch di default, questa regola sfrutta
+   quello spazio così i pulsanti sono allineati anche tra card di contenuto
+   diverso) */
+.card .test-card-actions {
+  align-items: center;
+  margin-top: auto;
+}
+
+.test-edit-btn,
+.test-archive-btn {
+  background: var(--pastel-pink);
+  color: #5a3060;
+  font-size: 14px;
+}
+
+.test-edit-btn:hover,
+.test-archive-btn:hover {
+  background: #ffd0d8;
+}
+
+.test-edit-btn.open {
+  background: var(--glaucous);
+  color: var(--white);
+}
+
 /* Pannello dettagli espandibile nella card */
 .test-details-panel {
   margin-top: 4px;
@@ -1087,6 +1113,85 @@ body {
   width: 15px;
   height: 15px;
   accent-color: var(--glaucous);
+}
+
+.class-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NUOVI STILI — Spazio dedicato "Verifiche archiviate"
+   ═══════════════════════════════════════════════════════════ */
+
+.archived-tests-panel-wrap {
+  margin-bottom: 16px;
+}
+
+.archived-tests-toggle-btn {
+  background: rgba(159, 122, 234, 0.13);
+  color: #7c4dbd;
+  border: 1.5px solid rgba(159, 122, 234, 0.35);
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+
+.archived-tests-toggle-btn:hover {
+  background: rgba(159, 122, 234, 0.22);
+  transform: translateY(-1px);
+}
+
+.archived-tests-content {
+  display: none;
+  margin-top: 10px;
+  background: rgba(159, 122, 234, 0.07);
+  border: 1.5px solid rgba(159, 122, 234, 0.28);
+  border-radius: 12px;
+  padding: 10px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.archived-tests-content.open {
+  display: flex;
+  animation: archivedTestContentIn .15s ease-out;
+}
+
+.archived-test-row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--white);
+  border: 1px solid rgba(159, 122, 234, 0.25);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.archived-test-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: .9em;
+}
+
+.archived-test-row-info small {
+  color: #888;
+}
+
+.archived-test-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1328,19 +1433,41 @@ body {
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px #7c3aed44;
 }
 
-.color-custom-input {
+.color-custom-wrapper {
+  position: relative;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
-  border: 2px solid #ccc;
-  padding: 0;
-  cursor: pointer;
-  background: none;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.color-custom-input::-webkit-color-swatch-wrapper { padding: 0; }
-.color-custom-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+.color-custom-dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    #ff0000, #ff9900, #ffee00, #33ff00, #00ffee, #0066ff, #9900ff, #ff0099, #ff0000);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px #ccc;
+  pointer-events: none; /* il click passa all'input sotto, che è invisibile */
+  transition: transform .12s, box-shadow .12s;
+}
+
+.color-custom-wrapper:hover .color-custom-dot {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 1.5px #7c3aed;
+}
+
+.color-custom-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  opacity: 0; /* invisibile: il pallino arcobaleno sopra fa da bottone visivo */
+  cursor: pointer;
+}
 
 .class-color-preview {
   width: 30px;
@@ -1692,4 +1819,222 @@ body {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODALE "NUOVA VERIFICA"
+   ═══════════════════════════════════════════════════════════ */
+
+#newTestDialog {
+  border: none;
+  border-radius: 18px;
+  padding: 0;
+  min-width: 380px;
+  max-width: 460px;
+  width: 92vw;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
+  overflow: visible;
+}
+
+#newTestDialog::backdrop {
+  background: rgba(45, 20, 60, 0.45);
+  backdrop-filter: blur(1.5px);
+}
+
+#newTestForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 26px 26px 20px;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+
+/* Titolo della dialog, qualunque tag usi (h2/h3), reso coerente con le altre */
+#newTestDialog h2,
+#newTestDialog h3 {
+  margin: 0 0 2px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--glaucous);
+}
+
+#newTestForm .field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #5a3060;
+}
+
+#newTestForm .field input[type="text"],
+#newTestForm .field input:not([type]),
+#newTestForm select {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--pastel-pink);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--white);
+  transition: border-color .15s, box-shadow .15s;
+}
+
+#newTestForm .field input[type="text"]:focus,
+#newTestForm .field input:not([type]):focus,
+#newTestForm select:focus {
+  outline: none;
+  border-color: var(--glaucous);
+  box-shadow: 0 0 0 3px rgba(109, 134, 200, 0.18);
+}
+
+#newTestForm .field-error {
+  color: #c0392b;
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+/* Riga pulsanti Annulla / Crea */
+#newTestForm menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+#newTestForm #confirmNewTestBtn {
+  padding: 10px 22px;
+}
+
+/* Tasto Annulla: stesso linguaggio visivo dei bottoni secondari (pastel-pink) */
+#newTestForm #cancelNewTestBtn {
+  background: var(--pastel-pink);
+  color: #5a3060;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform .1s ease, background .2s ease;
+}
+
+#newTestForm #cancelNewTestBtn:hover {
+  background: #ffd0d8;
+  transform: translateY(-1px);
+}
+
+/* ── Blocco "riusa da una verifica archiviata" ── */
+.archived-test-picker {
+  gap: 0;
+  margin: 0;
+}
+
+.archived-test-toggle-btn {
+  align-self: flex-start;
+  background: rgba(159, 122, 234, 0.13);
+  color: #7c4dbd;
+  border: 1.5px solid rgba(159, 122, 234, 0.35);
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+
+.archived-test-toggle-btn:hover {
+  background: rgba(159, 122, 234, 0.22);
+  transform: translateY(-1px);
+}
+
+.archived-test-content {
+  display: none;
+  margin-top: 10px;
+  background: rgba(159, 122, 234, 0.08);
+  border: 1.5px solid rgba(159, 122, 234, 0.3);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.archived-test-content.open {
+  display: block;
+  animation: archivedTestContentIn .15s ease-out;
+}
+
+@keyframes archivedTestContentIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.archived-test-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.archived-test-row select {
+  flex: 1;
+}
+
+.archived-test-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: .75;
+}
+
+/* ── Checklist "per quali classi" ── */
+.new-test-target-classes {
+  gap: 6px;
+}
+
+.new-test-target-classes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.new-test-target-class-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--chip-bg, var(--antique-white));
+  border: 1.5px solid var(--chip-border, var(--pastel-pink));
+  border-radius: 20px;
+  padding: 5px 12px 5px 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a3060;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.new-test-target-class-chip:hover {
+  border-color: var(--chip-border, var(--glaucous));
+  filter: brightness(0.96);
+}
+
+.new-test-target-class-chip:has(.new-test-target-class-checkbox:checked),
+.new-test-target-class-chip.checked {
+  background: var(--chip-checked-bg, rgba(109, 134, 200, 0.16));
+  border-color: var(--chip-checked-border, var(--glaucous));
+  color: var(--chip-checked-text, #5a3060);
+}
+
+.new-test-target-class-checkbox {
+  accent-color: var(--glaucous);
+  cursor: pointer;
+}
+
+.new-test-target-classes-error {
+  display: none;
+  color: #c0392b;
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+.new-test-target-classes-error.show {
+  display: block;
 }

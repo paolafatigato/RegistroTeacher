@@ -422,6 +422,7 @@ function init() {
     if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
     _selectedArchivedTestTemplate = null;
     refreshArchivedTestPicker();
+    refreshNewTestClassesField();
     refreshSuggestions();
     newTestDialog.showModal();
   });
@@ -462,6 +463,15 @@ function init() {
   if (newTestForm) {
     newTestForm.addEventListener("submit", (e) => {
       e.preventDefault();
+
+      const selectedClassIds = getCheckedNewTestClassIds();
+      const classesError = document.getElementById("newTestTargetClassesError");
+      if (!selectedClassIds.length) {
+        if (classesError) classesError.classList.add("show");
+        return;
+      }
+      if (classesError) classesError.classList.remove("show");
+
       const name = newTestNameInput.value.trim() || generateTestName();
       const subject = newTestSubjectInput.value.trim();
       const newTestCategoryInput = document.getElementById("newTestCategoryInput");
@@ -469,6 +479,7 @@ function init() {
       const newTest = _selectedArchivedTestTemplate
         ? buildTestFromTemplate(_selectedArchivedTestTemplate, name, subject, category)
         : createTest(name, subject, category);
+      newTest.classIds = selectedClassIds;
       _selectedArchivedTestTemplate = null;
       state.tests.push(newTest);
       state.selectedTestId = newTest.id;
@@ -894,13 +905,115 @@ function renderClassDetail() {
   classStudentsTable.appendChild(tbody);
 }
 
+let _archivedTestsPanelOpen = false;
+
+/**
+ * Costruisce (o ricostruisce) lo spazio dedicato alle verifiche archiviate:
+ * un pannello a comparsa, chiuso di default, che si apre solo su richiesta.
+ * Se non ci sono verifiche archiviate lo spazio non viene mostrato.
+ */
+function renderArchivedTestsPanel() {
+  const existing = document.getElementById("archivedTestsPanelWrap");
+  if (existing) existing.remove();
+
+  const archived = state.tests
+    .filter(t => t.archived)
+    .sort((a, b) => (b.archivedAt || "").localeCompare(a.archivedAt || ""));
+
+  if (!archived.length) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "archivedTestsPanelWrap";
+  wrap.className = "archived-tests-panel-wrap";
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.className = "archived-tests-toggle-btn";
+  const updateToggleLabel = () => {
+    toggleBtn.textContent = `📦 Verifiche archiviate (${archived.length}) ${_archivedTestsPanelOpen ? "▲" : "▾"}`;
+  };
+  updateToggleLabel();
+
+  const content = document.createElement("div");
+  content.className = "archived-tests-content" + (_archivedTestsPanelOpen ? " open" : "");
+
+  archived.forEach(test => {
+    const row = document.createElement("div");
+    row.className = "archived-test-row-item";
+
+    const info = document.createElement("div");
+    info.className = "archived-test-row-info";
+    const titleEl = document.createElement("strong");
+    titleEl.textContent = test.title || "Verifica";
+    info.appendChild(titleEl);
+
+    const metaParts = [];
+    if (test.subject) metaParts.push(test.subject);
+    const clsNames = (test.classIds || [])
+      .map(cid => state.classes.find(c => c.id === cid)?.name)
+      .filter(Boolean);
+    if (clsNames.length) metaParts.push(clsNames.join(", "));
+    if (metaParts.length) {
+      const metaEl = document.createElement("small");
+      metaEl.textContent = metaParts.join(" · ");
+      info.appendChild(metaEl);
+    }
+    row.appendChild(info);
+
+    const rowActions = document.createElement("div");
+    rowActions.className = "archived-test-row-actions";
+
+    const restoreBtn = document.createElement("button");
+    restoreBtn.type = "button";
+    restoreBtn.className = "btn btn-secondary btn-small";
+    restoreBtn.textContent = "↩️ Ripristina";
+    restoreBtn.title = "Riporta questa verifica tra quelle attive";
+    restoreBtn.addEventListener("click", () => setTestArchived(test, false));
+    rowActions.appendChild(restoreBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "icon-btn";
+    deleteBtn.style.cssText = "width:26px;height:26px;font-size:14px;";
+    deleteBtn.textContent = "×";
+    deleteBtn.setAttribute("aria-label", "Elimina definitivamente");
+    deleteBtn.title = "Elimina definitivamente";
+    deleteBtn.addEventListener("click", () => {
+      if (!confirm(`Eliminare definitivamente la verifica "${test.title}"? Tutti i voti andranno persi.`)) return;
+      state.tests = state.tests.filter(t => t.id !== test.id);
+      saveState();
+      renderTestsList();
+      renderTestTable();
+    });
+    rowActions.appendChild(deleteBtn);
+
+    row.appendChild(rowActions);
+    content.appendChild(row);
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    _archivedTestsPanelOpen = !_archivedTestsPanelOpen;
+    content.classList.toggle("open", _archivedTestsPanelOpen);
+    updateToggleLabel();
+  });
+
+  wrap.appendChild(toggleBtn);
+  wrap.appendChild(content);
+  testsList.parentElement.insertBefore(wrap, testsList);
+}
+
 function renderTestsList() {
   testsList.innerHTML = "";
   state.tests.forEach(ensureTestMeta);
 
+  // ── Spazio dedicato "Verifiche archiviate" (si apre volontariamente) ──────
+  // Le verifiche archiviate non compaiono mai nella lista/filtri qui sotto.
+  renderArchivedTestsPanel();
+  const activeTests = state.tests.filter(t => !t.archived);
+
   // ── Valori unici per i filtri ────────────────────────────────────────────
-  const allSubjects    = [...new Set(state.tests.map(t => t.subject).filter(Boolean))].sort();
-  const allCategories  = [...new Set(state.tests.flatMap(t => t.categories || []).filter(Boolean))].sort();
+  const allSubjects    = [...new Set(activeTests.map(t => t.subject).filter(Boolean))].sort();
+  const allCategories  = [...new Set(activeTests.flatMap(t => t.categories || []).filter(Boolean))].sort();
 
   const filterClass    = document.getElementById("filterClass")?.value    || "";
   const filterSubject  = document.getElementById("filterSubject")?.value  || "";
@@ -937,7 +1050,7 @@ function renderTestsList() {
   });
 
   // ── Filtro ────────────────────────────────────────────────────────────────
-  const filtered = state.tests.filter(test => {
+  const filtered = activeTests.filter(test => {
     if (filterSubject  && test.subject !== filterSubject)  return false;
     if (filterCategory && !(test.categories || []).includes(filterCategory)) return false;
     if (filterClass    && !test.classIds.includes(filterClass)) return false;
@@ -1008,8 +1121,10 @@ function renderTestsList() {
         chip.className = "class-date-chip";
         const clsColor = state.settings?.classColors?.[cid];
         if (clsColor) {
-          chip.style.background = clsColor + "33"; // 20% opacity
+          chip.style.background = clsColor + "33"; // ~20% opacità
+          chip.style.border = `1px solid ${clsColor}`;
           chip.style.borderLeft = `3px solid ${clsColor}`;
+          chip.style.color = getReadableTextColor(clsColor);
         }
         chip.textContent = cls.name + (date ? " · " + date : "");
         classRow.appendChild(chip);
@@ -1022,11 +1137,13 @@ function renderTestsList() {
     info.style.color = "#888";
     card.appendChild(info);
 
-    // ── Pannello "Modifica dettagli" ──────────────────────────────────────
+    // ── Pannello "Modifica dettagli" (attivato da un'icona affiancata a Valuta) ──
     const detailsToggle = document.createElement("button");
-    detailsToggle.className = "btn btn-secondary btn-small";
-    detailsToggle.style.cssText = "margin-top:8px;font-size:.8em;";
-    detailsToggle.textContent = "✏️ Modifica dettagli";
+    detailsToggle.type = "button";
+    detailsToggle.className = "icon-btn test-edit-btn";
+    detailsToggle.textContent = "✏️";
+    detailsToggle.title = "Modifica dettagli";
+    detailsToggle.setAttribute("aria-label", "Modifica dettagli");
 
     const detailsPanel = document.createElement("div");
     detailsPanel.className = "test-details-panel";
@@ -1132,8 +1249,17 @@ function renderTestsList() {
       chk.className = "cls-check";
       chk.dataset.classId = c.id;
       chk.checked = test.classIds.includes(c.id);
+      const clsColor = state.settings?.classColors?.[c.id];
+      if (clsColor) chk.style.accentColor = clsColor;
       const nameSp = document.createElement("span");
-      nameSp.textContent = c.name;
+      nameSp.style.cssText = "display:inline-flex;align-items:center;gap:6px;";
+      if (clsColor) {
+        const dot = document.createElement("span");
+        dot.className = "class-color-dot";
+        dot.style.background = clsColor;
+        nameSp.appendChild(dot);
+      }
+      nameSp.appendChild(document.createTextNode(c.name));
       const dateIn = document.createElement("input");
       dateIn.type = "date";
       dateIn.className = "cls-date";
@@ -1181,16 +1307,17 @@ function renderTestsList() {
     detailsToggle.addEventListener("click", () => {
       const open = detailsPanel.style.display === "block";
       detailsPanel.style.display = open ? "none" : "block";
-      detailsToggle.textContent = open ? "✏️ Modifica dettagli" : "▲ Chiudi";
+      detailsToggle.textContent = open ? "✏️" : "▲";
+      detailsToggle.title = open ? "Modifica dettagli" : "Chiudi";
+      detailsToggle.setAttribute("aria-label", open ? "Modifica dettagli" : "Chiudi");
+      detailsToggle.classList.toggle("open", !open);
     });
 
-    card.appendChild(detailsToggle);
-    card.appendChild(detailsPanel);
-
-    // ── Azioni principali ─────────────────────────────────────────────────
+    // ── Azioni principali (matita + Valuta affiancate, poi Configura/Archivia) ──
     const actions = document.createElement("div");
-    actions.classList.add("panel-actions");
-    actions.style.marginTop = "10px";
+    actions.classList.add("panel-actions", "test-card-actions");
+
+    actions.appendChild(detailsToggle);
 
     const evalBtn = document.createElement("button");
     evalBtn.classList.add("btn", "btn-secondary");
@@ -1216,6 +1343,18 @@ function renderTestsList() {
       actions.appendChild(configBtn);
     }
 
+    const archiveBtn = document.createElement("button");
+    archiveBtn.type = "button";
+    archiveBtn.classList.add("icon-btn", "test-archive-btn");
+    archiveBtn.textContent = "📦";
+    archiveBtn.title = "Archivia";
+    archiveBtn.setAttribute("aria-label", "Archivia verifica");
+    archiveBtn.addEventListener("click", () => setTestArchived(test, true));
+    actions.appendChild(archiveBtn);
+
+    card.appendChild(actions);
+    card.appendChild(detailsPanel);
+
     const deleteBtn = document.createElement("button");
     deleteBtn.classList.add("icon-btn", "card-delete");
     deleteBtn.textContent = "×";
@@ -1229,7 +1368,6 @@ function renderTestsList() {
     });
     card.appendChild(deleteBtn);
 
-    card.appendChild(actions);
     testsList.appendChild(card);
   });
 }
@@ -1394,9 +1532,7 @@ function renderSettingsDialog() {
   classColorsList.innerHTML = "";
 
   const PALETTE = [
-    "#f08080","#f4a460","#ffd700","#98fb98","#87ceeb",
-    "#dda0dd","#ff69b4","#20b2aa","#6495ed","#ff7f50",
-    "#90ee90","#ba55d3","#40e0d0","#ff6347","#7b68ee",
+    "#f08080", "#f4a460", "#ffd700", "#98fb98", "#6495ed", "#ba55d3",
   ];
 
   if (state.classes.length === 0) {
@@ -1435,11 +1571,20 @@ function renderSettingsDialog() {
         swatches.appendChild(sw);
       });
 
-      // Custom color picker
+      // Pallino arcobaleno: cliccandolo si apre il selettore colore nativo per
+      // crearne uno personalizzato (l'input è invisibile ma sovrapposto al
+      // pallino, così il click ci arriva comunque).
+      const customWrapper = document.createElement("div");
+      customWrapper.className = "color-custom-wrapper";
+      customWrapper.title = "Crea un colore personalizzato";
+
+      const customDot = document.createElement("span");
+      customDot.className = "color-custom-dot";
+      customWrapper.appendChild(customDot);
+
       const customInput = document.createElement("input");
       customInput.type = "color";
       customInput.className = "color-custom-input";
-      customInput.title = "Colore personalizzato";
       customInput.value = state.settings.classColors[cls.id] || "#cccccc";
       customInput.addEventListener("input", (e) => {
         state.settings.classColors[cls.id] = e.target.value;
@@ -1448,7 +1593,8 @@ function renderSettingsDialog() {
         saveState();
         renderTestsList();
       });
-      swatches.appendChild(customInput);
+      customWrapper.appendChild(customInput);
+      swatches.appendChild(customWrapper);
 
       row.appendChild(swatches);
 
@@ -2904,27 +3050,35 @@ function buildTestFromTemplate(archivedTest, title, subject, category) {
 let _selectedArchivedTestTemplate = null;
 let _archivedTestPickerBuilt = false;
 
-/** Inserisce (una sola volta) il selettore "riusa da archiviata" nel form nuova verifica. */
+/**
+ * Inserisce (una sola volta) il blocco "riusa da archiviata" nel form nuova
+ * verifica: un pulsante che apre/chiude un piccolo pannello con il menu a
+ * tendina, così di default il form resta pulito e le verifiche archiviate si
+ * vedono solo cliccando.
+ */
 function ensureArchivedTestPicker() {
   const form = document.getElementById("newTestForm");
   if (!form || _archivedTestPickerBuilt) return;
 
   const wrap = document.createElement("div");
-  wrap.className = "field";
+  wrap.className = "field archived-test-picker";
   wrap.id = "archivedTestPickerField";
-  wrap.style.cssText =
-    "background:rgba(159,122,234,0.08);border:1.5px solid rgba(159,122,234,0.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;";
 
-  const label = document.createElement("label");
-  label.textContent = "📦 Riusa da una verifica archiviata (facoltativo)";
-  wrap.appendChild(label);
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.id = "archivedTestToggleBtn";
+  toggleBtn.className = "archived-test-toggle-btn";
+  wrap.appendChild(toggleBtn);
+
+  const content = document.createElement("div");
+  content.id = "archivedTestPickerContent";
+  content.className = "archived-test-content";
 
   const row = document.createElement("div");
-  row.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:4px;";
+  row.className = "archived-test-row";
 
   const select = document.createElement("select");
   select.id = "archivedTestTemplateSelect";
-  select.style.flex = "1";
   row.appendChild(select);
 
   const clearBtn = document.createElement("button");
@@ -2936,12 +3090,27 @@ function ensureArchivedTestPicker() {
     _selectedArchivedTestTemplate = null;
   });
   row.appendChild(clearBtn);
-  wrap.appendChild(row);
+  content.appendChild(row);
 
   const hint = document.createElement("small");
-  hint.style.cssText = "display:block;margin-top:6px;opacity:.75;";
+  hint.className = "archived-test-hint";
   hint.textContent = "Riprende titolo, materia, sezioni e pesi dalla verifica scelta: potrai comunque modificare tutto prima di creare.";
-  wrap.appendChild(hint);
+  content.appendChild(hint);
+
+  wrap.appendChild(content);
+
+  const setToggleLabel = (open) => {
+    toggleBtn.textContent = open
+      ? "📦 Riusa da una verifica archiviata ▲"
+      : "📦 Riusa da una verifica archiviata ▾";
+  };
+  setToggleLabel(false);
+
+  toggleBtn.addEventListener("click", () => {
+    const isOpen = content.classList.contains("open");
+    content.classList.toggle("open", !isOpen);
+    setToggleLabel(!isOpen);
+  });
 
   select.addEventListener("change", () => {
     const archivedId = select.value;
@@ -2960,12 +3129,20 @@ function ensureArchivedTestPicker() {
   _archivedTestPickerBuilt = true;
 }
 
-/** Aggiorna le opzioni del selettore "riusa da archiviata" (nascosto se non ce ne sono). */
+/**
+ * Aggiorna le opzioni del selettore "riusa da archiviata": nascosto se non ci
+ * sono verifiche archiviate, sempre richiuso all'apertura della dialog.
+ * Le opzioni sono raggruppate per anno (1ª, 2ª, 3ª...) in base a quali classi
+ * usavano quella verifica al momento dell'archiviazione, e in ordine
+ * cronologico all'interno di ciascun gruppo.
+ */
 function refreshArchivedTestPicker() {
   ensureArchivedTestPicker();
   const wrap = document.getElementById("archivedTestPickerField");
+  const toggleBtn = document.getElementById("archivedTestToggleBtn");
+  const content = document.getElementById("archivedTestPickerContent");
   const select = document.getElementById("archivedTestTemplateSelect");
-  if (!wrap || !select) return;
+  if (!wrap || !select || !content || !toggleBtn) return;
 
   const archived = state.archivedTests || [];
   if (!archived.length) {
@@ -2973,6 +3150,8 @@ function refreshArchivedTestPicker() {
     return;
   }
   wrap.style.display = "";
+  content.classList.remove("open");
+  toggleBtn.textContent = "📦 Riusa da una verifica archiviata ▾";
 
   select.innerHTML = "";
   const emptyOpt = document.createElement("option");
@@ -2980,17 +3159,123 @@ function refreshArchivedTestPicker() {
   emptyOpt.textContent = "— Nessuna (verifica vuota) —";
   select.appendChild(emptyOpt);
 
-  archived
-    .slice()
-    .sort((a, b) => (b.archivedAt || "").localeCompare(a.archivedAt || ""))
-    .forEach((t) => {
-      const opt = document.createElement("option");
-      opt.value = t.id;
-      const yearLabel = t.schoolYearLabel ? ` (${t.schoolYearLabel})` : "";
-      opt.textContent = `${t.title || "Verifica"}${t.subject ? " — " + t.subject : ""}${yearLabel}`;
-      select.appendChild(opt);
+  // Raggruppa per anno (salvato in yearLevels al momento dell'archiviazione,
+  // in Classroom Manager); le verifiche senza anno riconosciuto vanno in "Altro".
+  // Una verifica usata su più anni compare in più gruppi.
+  const groups = new Map();
+  archived.forEach((t) => {
+    const levels = Array.isArray(t.yearLevels) && t.yearLevels.length ? t.yearLevels : [null];
+    levels.forEach((lvl) => {
+      const key = lvl ? String(lvl) : "altro";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
     });
+  });
+
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+    if (a === "altro") return 1;
+    if (b === "altro") return -1;
+    return parseInt(a, 10) - parseInt(b, 10);
+  });
+
+  sortedKeys.forEach((key) => {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = key === "altro" ? "Altro / classe non specificata" : `Classi ${key}ª`;
+    groups.get(key)
+      .slice()
+      // Ordine cronologico (dalla più vecchia alla più recente) dentro al gruppo
+      .sort((a, b) => (a.archivedAt || "").localeCompare(b.archivedAt || ""))
+      .forEach((t) => {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        const yearLabel = t.schoolYearLabel ? ` (${t.schoolYearLabel})` : "";
+        opt.textContent = `${t.title || "Verifica"}${t.subject ? " — " + t.subject : ""}${yearLabel}`;
+        optgroup.appendChild(opt);
+      });
+    select.appendChild(optgroup);
+  });
+
   select.value = "";
+}
+
+// ── Classi di destinazione della nuova verifica ─────────────────────────────
+
+let _newTestClassesFieldBuilt = false;
+
+/** Inserisce (una sola volta) la checklist "per quali classi" nel form nuova verifica. */
+function ensureNewTestClassesField() {
+  const form = document.getElementById("newTestForm");
+  if (!form || _newTestClassesFieldBuilt) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "field new-test-target-classes";
+  wrap.id = "newTestTargetClassesField";
+
+  const label = document.createElement("label");
+  label.textContent = "Per quali classi è pensata questa verifica";
+  wrap.appendChild(label);
+
+  const list = document.createElement("div");
+  list.id = "newTestTargetClassesList";
+  list.className = "new-test-target-classes-list";
+  wrap.appendChild(list);
+
+  const error = document.createElement("p");
+  error.id = "newTestTargetClassesError";
+  error.className = "new-test-target-classes-error";
+  error.textContent = "Seleziona almeno una classe.";
+  wrap.appendChild(error);
+
+  const anchor = document.getElementById("archivedTestPickerField");
+  if (anchor && anchor.parentNode === form) {
+    anchor.after(wrap);
+  } else {
+    form.insertBefore(wrap, form.firstChild);
+  }
+  _newTestClassesFieldBuilt = true;
+}
+
+/** Ricostruisce la checklist classi (tutte deselezionate) con le classi attuali. */
+function refreshNewTestClassesField() {
+  ensureNewTestClassesField();
+  const list = document.getElementById("newTestTargetClassesList");
+  const error = document.getElementById("newTestTargetClassesError");
+  if (!list) return;
+  if (error) error.classList.remove("show");
+
+  list.innerHTML = "";
+  (state.classes || []).forEach((cls) => {
+    const chip = document.createElement("label");
+    chip.className = "new-test-target-class-chip";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = cls.id;
+    checkbox.className = "new-test-target-class-checkbox";
+
+    // Se per questa classe è stato scelto un colore (in Impostazioni), il chip
+    // lo eredita: bordo/sfondo leggero da spuntato, colore pieno da selezionato.
+    const color = state.settings?.classColors?.[cls.id];
+    if (color) {
+      chip.style.setProperty("--chip-border", color);
+      chip.style.setProperty("--chip-bg", color + "22");
+      chip.style.setProperty("--chip-checked-bg", color);
+      chip.style.setProperty("--chip-checked-border", color);
+      chip.style.setProperty("--chip-checked-text", getReadableTextColor(color));
+      checkbox.style.accentColor = color;
+    }
+
+    checkbox.addEventListener("change", () => {
+      chip.classList.toggle("checked", checkbox.checked);
+    });
+    chip.appendChild(checkbox);
+    chip.appendChild(document.createTextNode(cls.name || "Classe"));
+    list.appendChild(chip);
+  });
+}
+
+function getCheckedNewTestClassIds() {
+  return Array.from(document.querySelectorAll(".new-test-target-class-checkbox:checked")).map((cb) => cb.value);
 }
 
 /** Garantisce che i test vecchi abbiano i nuovi campi */
@@ -3003,6 +3288,31 @@ function ensureTestMeta(test) {
   }
   if (!test.classIds)   test.classIds   = [];
   if (!test.classDates) test.classDates = {};
+  if (typeof test.archived !== "boolean") test.archived = false;
+}
+
+/** Sposta una verifica tra attive/archiviate (reversibile dallo spazio "Verifiche archiviate"). */
+function setTestArchived(test, archived) {
+  test.archived = !!archived;
+  if (test.archived) test.archivedAt = new Date().toISOString();
+  saveState();
+  renderTestsList();
+}
+
+/**
+ * Colore di testo leggibile (chiaro/scuro) sopra uno sfondo esadecimale dato,
+ * usato per mantenere leggibili i chip colorati con i colori delle classi.
+ */
+function getReadableTextColor(hex) {
+  if (!hex) return "#3f3f3f";
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  const r = parseInt(full.substring(0, 2), 16);
+  const g = parseInt(full.substring(2, 4), 16);
+  const b = parseInt(full.substring(4, 6), 16);
+  if ([r, g, b].some(Number.isNaN)) return "#3f3f3f";
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#3f3f3f" : "#ffffff";
 }
 
 function createClass(name) {
