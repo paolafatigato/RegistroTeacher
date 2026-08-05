@@ -806,8 +806,8 @@ function renderClassDetail() {
   dsaHeader.style.cssText = "width:80px;text-align:center;font-size:.85em;";
   headerRow.appendChild(dsaHeader);
 
-  // Filtra i test: mostra solo quelli che hanno almeno un voto nella classe
-  const visibleTests = state.tests.filter((test) => testHasGradesInClass(test, selectedClass));
+  // Filtra i test: mostra solo quelli attivi (non archiviati) che hanno almeno un voto nella classe
+  const visibleTests = state.tests.filter((test) => !test.archived && testHasGradesInClass(test, selectedClass));
   
   visibleTests.forEach((test) => {
     const th = document.createElement("th");
@@ -3439,12 +3439,15 @@ function createId(prefix) {
 }
 
 function getStudentAverage(student) {
-  if (!state.tests.length) {
+  // Le verifiche archiviate (cambio anno scolastico / cambio quadrimestre)
+  // non devono più contribuire alla media: si considerano solo quelle attive.
+  const activeTests = state.tests.filter((test) => !test.archived);
+  if (!activeTests.length) {
     return 0;
   }
   // Filtra i voti: esclude null, undefined e voti <= 2 (non svolti)
   // Se lo studente è facilitato, usa la versione facilitata di ogni test
-  const scores = state.tests
+  const scores = activeTests
     .map((test) => {
       if (student.facilitated === true) {
         const facilitatedVersion = getVersionById(test, getFacilitatedVersionId(test));
