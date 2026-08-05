@@ -325,6 +325,30 @@
     </div>
   </dialog>
 
+  <!-- Dialog griglia di valutazione per singolo studente -->
+  <dialog id="studentRubricDialog">
+    <div class="student-rubric-dialog-inner">
+      <div class="student-rubric-dialog-header">
+        <h3 id="studentRubricTitle">📐 Griglia di valutazione</h3>
+        <button id="studentRubricPrintBtn" class="btn btn-secondary">🖨️ Stampa griglia</button>
+      </div>
+      <p class="student-rubric-hint">
+        💡 La colonna <strong>Generale</strong> è quella condivisa (si modifica in "📐 Griglia"); accanto,
+        scrivi il giudizio specifico per questo studente, voto per voto. La cella evidenziata è il voto
+        già assegnato in "Valutazione".
+      </p>
+      <div id="studentRubricPrintArea">
+        <h3 id="studentRubricPrintTitle" class="rubric-print-title"></h3>
+        <div id="studentRubricTableWrapper" class="table-wrapper">
+          <table id="studentRubricTable" class="grade-table rubric-table student-rubric-table"></table>
+        </div>
+      </div>
+      <div class="student-rubric-dialog-actions">
+        <button id="studentRubricCloseBtn" class="btn btn-primary">Chiudi</button>
+      </div>
+    </div>
+  </dialog>
+
   <footer class="app-footer">
     <span>Voti salvati localmente. Classi sincronizzate da Firebase.</span>
   </footer>

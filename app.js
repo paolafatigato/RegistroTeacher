@@ -199,6 +199,13 @@ const rubricPrintBtn = document.getElementById("rubricPrintBtn");
 const rubricEmptyState = document.getElementById("rubricEmptyState");
 const rubricPrintTitle = document.getElementById("rubricPrintTitle");
 
+const studentRubricDialog = document.getElementById("studentRubricDialog");
+const studentRubricTitle = document.getElementById("studentRubricTitle");
+const studentRubricPrintTitle = document.getElementById("studentRubricPrintTitle");
+const studentRubricTable = document.getElementById("studentRubricTable");
+const studentRubricCloseBtn = document.getElementById("studentRubricCloseBtn");
+const studentRubricPrintBtn = document.getElementById("studentRubricPrintBtn");
+
 const configTestSelect = document.getElementById("configTestSelect");
 const testTitleInput = document.getElementById("testTitle");
 const configVersionSelect = document.getElementById("configVersionSelect");
@@ -672,6 +679,19 @@ function init() {
   });
 
   commentCancelBtn.addEventListener("click", () => commentDialog.close());
+
+  if (studentRubricCloseBtn && studentRubricDialog) {
+    studentRubricCloseBtn.addEventListener("click", () => studentRubricDialog.close());
+  }
+  if (studentRubricPrintBtn) {
+    studentRubricPrintBtn.addEventListener("click", () => {
+      document.body.classList.add("printing-student-rubric");
+      window.print();
+    });
+    window.addEventListener("afterprint", () => {
+      document.body.classList.remove("printing-student-rubric");
+    });
+  }
 
   resetBtn.addEventListener("click", () => {
     if (confirm("Reset all data?")) {
@@ -2218,31 +2238,28 @@ function renderTestTable() {
       row.classList.add("version-mismatch");
     }
 
+    // Il nome NON è più modificabile qui (si gestisce da ClassroomManager):
+    // l'intera cella è un trigger che apre la griglia di valutazione dello
+    // studente, con un piccolo triangolo in alto a destra come indizio
+    // visivo (stesso linguaggio grafico del trigger dei commenti).
     const studentCell = document.createElement("td");
     studentCell.classList.add("student-cell");
-    const studentInput = document.createElement("input");
-    studentInput.type = "text";
-    studentInput.value = student.name || "";
-    studentInput.addEventListener("change", (event) => {
-      student.name = event.target.value;
-      saveState();
-    });
-    studentCell.appendChild(studentInput);
-    
-    // Aggiungi click handler per cambiare versione
     studentCell.style.cursor = "pointer";
-    studentCell.addEventListener("click", (event) => {
-      if (event.target !== studentInput) {
-        if (isFacilitated) {
-          state.selectedTestVersionId = facilitatedVersionId;
-        } else {
-          state.selectedTestVersionId = activeVersion?.id;
-        }
-        saveState();
-        renderTestTable();
-      }
+    studentCell.title = `Apri la griglia di valutazione per ${student.name || "questo studente"}`;
+
+    const studentNameText = document.createElement("span");
+    studentNameText.classList.add("student-name-text");
+    studentNameText.textContent = student.name || "";
+    studentCell.appendChild(studentNameText);
+
+    const rubricNameTrigger = document.createElement("div");
+    rubricNameTrigger.className = "rubric-name-trigger";
+    studentCell.appendChild(rubricNameTrigger);
+
+    studentCell.addEventListener("click", () => {
+      openStudentRubricDialog(student, selectedTest, activeVersion);
     });
-    
+
     row.appendChild(studentCell);
 
     const versionCell = document.createElement("td");
@@ -3124,6 +3141,175 @@ function renderRubricGrid() {
     tbody.appendChild(row);
   }
   rubricTable.appendChild(tbody);
+}
+
+// =====================================================================
+//  GRIGLIA DI VALUTAZIONE PER SINGOLO STUDENTE
+//  Si apre cliccando il triangolino ▶ a sinistra dei voti, in "Valutazione".
+//  Stessa struttura di renderRubricGrid() (sections/subsections/voti), ma
+//  ogni sottosezione ha DUE colonne: "Generale" (sub.rubric, sola lettura —
+//  si modifica in "📐 Griglia") e quella di questo studente (editabile).
+//  Il giudizio specifico è salvato in sub.studentRubric = { studentId:
+//  { "3": "testo", "4": "testo" } }, quindi vive nello stesso oggetto
+//  subsection già sincronizzato da saveState()/saveGradingToFirebase()
+//  senza bisogno di alcun codice aggiuntivo.
+// =====================================================================
+
+function openStudentRubricDialog(student, test, version) {
+  if (!studentRubricDialog || !studentRubricTable || !student || !test || !version) return;
+
+  const sections = version.sections ?? [];
+  sections.forEach((section) => {
+    if (!Array.isArray(section.subsections)) section.subsections = [];
+    if (section.subsections.length === 0) {
+      section.subsections.push(
+        createSubsection({ weight: section.weight, max: section.max }, `${section.name}1`)
+      );
+      saveState();
+    }
+  });
+
+  const versionLabel = version.name ? ` · ${version.name}` : "";
+  const dialogTitleText = `📐 Griglia di valutazione — ${student.name || "Studente"} (${test.title || "Verifica"}${versionLabel})`;
+  if (studentRubricTitle) {
+    studentRubricTitle.textContent = dialogTitleText;
+  }
+  if (studentRubricPrintTitle) {
+    studentRubricPrintTitle.textContent = dialogTitleText;
+  }
+
+  // Quante righe di voto servono: dalla colonna col max più alto (come nella griglia generale).
+  let globalMaxRow = 0;
+  sections.forEach((section) => {
+    const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+    section.subsections.forEach((sub) => {
+      const max = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+      globalMaxRow = Math.max(globalMaxRow, Math.ceil(max));
+    });
+  });
+
+  studentRubricTable.innerHTML = "";
+
+  // ── Intestazione: Voto + per ogni sottosezione, "Generale" e la colonna dello studente ──
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const subHeaderRow = document.createElement("tr");
+
+  const voteHeader = document.createElement("th");
+  voteHeader.textContent = "Voto";
+  voteHeader.classList.add("student-col", "rubric-vote-col");
+  voteHeader.rowSpan = 2;
+  headerRow.appendChild(voteHeader);
+
+  sections.forEach((section) => {
+    const sectionTh = document.createElement("th");
+    sectionTh.colSpan = section.subsections.length * 2;
+    sectionTh.textContent = section.name || "Sezione";
+    headerRow.appendChild(sectionTh);
+
+    section.subsections.forEach((sub, idx) => {
+      const isLast = idx === section.subsections.length - 1;
+
+      const generalTh = document.createElement("th");
+      generalTh.classList.add("subheader", "rubric-general-col");
+      generalTh.textContent = "GENERALE";
+      generalTh.title = sub.name ? `${sub.name} — giudizio generale (condiviso da tutti gli studenti)` : "Giudizio generale";
+      subHeaderRow.appendChild(generalTh);
+
+      const specificTh = document.createElement("th");
+      specificTh.classList.add("subheader", "rubric-specific-col");
+      if (isLast) specificTh.classList.add("section-divider");
+      specificTh.textContent = (student.name || "STUDENTE").toUpperCase();
+      specificTh.title = sub.name ? `${sub.name} — giudizio specifico per ${student.name || "questo studente"}` : "Giudizio specifico";
+      subHeaderRow.appendChild(specificTh);
+    });
+  });
+
+  thead.appendChild(headerRow);
+  thead.appendChild(subHeaderRow);
+  studentRubricTable.appendChild(thead);
+
+  // ── Corpo: una riga per ogni voto possibile, da 0 al massimo tra le colonne ──
+  const tbody = document.createElement("tbody");
+  for (let voteValue = 0; voteValue <= globalMaxRow; voteValue++) {
+    const row = document.createElement("tr");
+
+    const voteTd = document.createElement("td");
+    voteTd.classList.add("rubric-vote-cell");
+    voteTd.textContent = voteValue;
+    row.appendChild(voteTd);
+
+    let rowHasCurrentGrade = false;
+
+    sections.forEach((section) => {
+      const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+      section.subsections.forEach((sub, idx) => {
+        const isLast = idx === section.subsections.length - 1;
+        const subMax = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+        const notReachable = voteValue > subMax;
+
+        // Il voto già assegnato a QUESTO studente in questa sottosezione (in "Valutazione"):
+        // se combacia con la riga, evidenzia le celle così il voto dato salta subito all'occhio.
+        const studentScoreForSub = parseNumber(
+          student.scores?.[test.id]?.[section.id]?.subsections?.[sub.id]
+        );
+        const isCurrentGrade =
+          studentScoreForSub != null && Math.round(studentScoreForSub) === voteValue;
+        if (isCurrentGrade) rowHasCurrentGrade = true;
+
+        // Colonna generale: sola lettura, riflette sub.rubric (si modifica in "📐 Griglia").
+        const generalTd = document.createElement("td");
+        generalTd.classList.add("rubric-cell", "rubric-cell-general");
+        if (isCurrentGrade) generalTd.classList.add("rubric-cell-current");
+        if (notReachable) {
+          generalTd.classList.add("rubric-cell-disabled");
+          generalTd.textContent = "—";
+        } else {
+          generalTd.textContent = sub.rubric?.[voteValue] || "";
+        }
+        row.appendChild(generalTd);
+
+        // Colonna specifica: editabile, giudizio di QUESTO studente per questo voto.
+        const specificTd = document.createElement("td");
+        specificTd.classList.add("rubric-cell", "rubric-cell-specific");
+        if (isLast) specificTd.classList.add("section-divider");
+        if (isCurrentGrade) specificTd.classList.add("rubric-cell-current");
+        if (notReachable) {
+          specificTd.classList.add("rubric-cell-disabled");
+          specificTd.textContent = "—";
+        } else {
+          if (!sub.studentRubric || typeof sub.studentRubric !== "object") {
+            sub.studentRubric = {};
+          }
+          if (!sub.studentRubric[student.id] || typeof sub.studentRubric[student.id] !== "object") {
+            sub.studentRubric[student.id] = {};
+          }
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Giudizio specifico…";
+          input.value = sub.studentRubric[student.id][voteValue] ?? "";
+          input.addEventListener("change", (e) => {
+            const val = e.target.value;
+            if (val.trim()) {
+              sub.studentRubric[student.id][voteValue] = val;
+            } else {
+              delete sub.studentRubric[student.id][voteValue];
+            }
+            saveState();
+          });
+          specificTd.appendChild(input);
+        }
+        row.appendChild(specificTd);
+      });
+    });
+
+    if (rowHasCurrentGrade) voteTd.classList.add("rubric-cell-current");
+
+    tbody.appendChild(row);
+  }
+  studentRubricTable.appendChild(tbody);
+
+  studentRubricDialog.showModal();
 }
 
 function parseNumber(value) {

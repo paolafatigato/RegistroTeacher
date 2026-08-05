@@ -2448,3 +2448,113 @@ h1, h2, h3 {
     display: none !important;
   }
 }
+
+/* =====================================================================
+   TRIANGOLINO "griglia per studente" — colonna stretta a sinistra dei voti
+===================================================================== */
+.grade-table th.expand-col,
+.grade-table td.expand-cell {
+  width: 1%;
+  min-width: 30px;
+  white-space: nowrap;
+  padding: 4px 6px;
+}
+
+.grade-table td.expand-cell {
+  background: rgba(109, 134, 200, 0.05);
+}
+
+.row-expand-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(109, 134, 200, 0.14);
+  color: var(--glaucous-dark);
+  font-size: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.15s var(--ease), transform 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.row-expand-btn:hover {
+  background: var(--glaucous);
+  color: var(--white);
+  transform: scale(1.1);
+}
+
+/* =====================================================================
+   DIALOG — Griglia di valutazione per singolo studente
+===================================================================== */
+#studentRubricDialog {
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0;
+  box-shadow: var(--shadow-lift), 0 0 0 2px var(--glaucous);
+  min-width: 320px;
+  max-width: 96vw;
+  width: fit-content;
+  max-height: 92vh;
+}
+
+#studentRubricDialog::backdrop {
+  background: rgba(36, 36, 36, 0.45);
+  backdrop-filter: blur(1px);
+}
+
+.student-rubric-dialog-inner {
+  padding: 24px 26px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 92vh;
+  box-sizing: border-box;
+}
+
+.student-rubric-dialog-inner h3 {
+  margin: 0;
+  color: var(--glaucous-dark);
+}
+
+.student-rubric-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: #888;
+}
+
+#studentRubricTableWrapper {
+  overflow: auto;
+  max-height: 62vh;
+}
+
+.student-rubric-table th.rubric-general-col,
+.student-rubric-table th.rubric-specific-col {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+.student-rubric-table th.rubric-specific-col {
+  background: var(--flame-orange);
+}
+
+.student-rubric-table td.rubric-cell-general {
+  background: rgba(0, 0, 0, 0.025);
+  color: #6a6a6a;
+  font-size: 12.5px;
+  text-align: left;
+  min-width: 150px;
+  max-width: 220px;
+}
+
+.student-rubric-table td.rubric-cell-specific input {
+  text-align: left;
+  min-width: 150px;
+}
+
+.student-rubric-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
