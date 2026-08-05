@@ -1084,6 +1084,13 @@ function renderTestsList() {
       card.style.backgroundSize = "100% 5px";
       card.style.backgroundRepeat = "no-repeat";
       card.style.backgroundPosition = "0 0";
+      // Senza queste due proprietà il gradiente si ancora al padding-box (di
+      // default), cioè "dentro" il bordo trasparente: risultato, un vuoto
+      // nell'angolo in alto a sinistra dove il bordo arrotondato non viene
+      // coperto. Allineandolo al border-box combacia perfettamente col
+      // bordo, proprio come nel caso a un solo colore.
+      card.style.backgroundOrigin = "border-box";
+      card.style.backgroundClip = "border-box";
     }
 
     // Titolo (read-only, modificabile nel pannello)
