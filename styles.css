@@ -178,9 +178,8 @@ h1, h2, h3 {
 .panel-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 6px;
   align-items: flex-end;
-  margin-bottom: 16px;
 }
 
   .btn-classroom {
@@ -370,7 +369,6 @@ h1, h2, h3 {
 .grade-legend-dot.grade-tier-good { background: var(--goodgrade); }
 .grade-legend-dot.grade-tier-ok   { background: var(--quiteok); }
 .grade-legend-dot.grade-tier-bad  { background: var(--verybad); }
-.grade-legend-dot.not-graded      { background: #c9c9c9; }
 
 .grade-legend-corner {
   width: 11px;
@@ -979,15 +977,6 @@ h1, h2, h3 {
 .grade-table td.final-cell.grade-tier-bad {
   background: var(--bad-bg);
   color: var(--verybad);
-}
-
-/* Nessun voto inserito ancora: grigio neutro, NON rosso — non è
-   un'insufficienza, è semplicemente "da fare". */
-.grade-table td.final-cell.not-graded {
-  background: #f2f2f2;
-  color: #9a9a9a;
-  font-weight: 500;
-  font-style: italic;
 }
 
 #facilitatedActionArea {
@@ -2378,4 +2367,84 @@ h1, h2, h3 {
 
 .new-test-target-classes-error.show {
   display: block;
+}
+/* =====================================================================
+   GRIGLIA DI VALUTAZIONE (rubric)
+   Riusa .grade-table/.subheader/.section-header-cell/.subsection-remove
+   ecc. già definite sopra per Valutazione: qui solo le regole specifiche.
+===================================================================== */
+
+.rubric-print-title {
+  margin: 0 0 12px;
+  color: var(--glaucous, #6d86c8);
+  font-size: 16px;
+}
+
+.rubric-table th.rubric-vote-col,
+.rubric-table td.rubric-vote-cell {
+  width: 70px;
+  min-width: 70px;
+  max-width: 70px;
+  font-weight: 700;
+  background: rgba(109, 134, 200, 0.06);
+}
+
+.rubric-max-badge {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.rubric-table td.rubric-cell input {
+  text-align: left;
+  min-width: 150px;
+}
+
+.rubric-table td.rubric-cell-disabled {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.02),
+    rgba(0, 0, 0, 0.02) 6px,
+    rgba(0, 0, 0, 0.05) 6px,
+    rgba(0, 0, 0, 0.05) 12px
+  );
+  color: #bbb;
+}
+
+/* ── Stampa: nasconde tutta la pagina e mostra solo #rubricPrintArea ──
+   Trucco classico: tutto invisibile, poi solo l'area voluta (e i suoi
+   discendenti) tornano visibili e vengono riposizionati in cima al foglio. */
+@media print {
+  body.printing-rubric * {
+    visibility: hidden;
+  }
+  body.printing-rubric #rubricPrintArea,
+  body.printing-rubric #rubricPrintArea * {
+    visibility: visible;
+  }
+  body.printing-rubric #rubricPrintArea {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  body.printing-rubric .rubric-table {
+    min-width: 0;
+    width: 100%;
+    font-size: 12px;
+  }
+  body.printing-rubric .rubric-table input {
+    border: none !important;
+    background: transparent !important;
+  }
+  /* Il placeholder "Giudizio…" è solo un aiuto in editing: in stampa deve
+     restare invisibile, così le celle senza giudizio escono vuote invece
+     di mostrare il segnaposto. */
+  body.printing-rubric .rubric-table input::placeholder {
+    color: transparent !important;
+  }
+  body.printing-rubric .subsection-remove,
+  body.printing-rubric .section-add-btn {
+    display: none !important;
+  }
 }

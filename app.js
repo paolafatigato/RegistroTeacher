@@ -176,6 +176,7 @@ const testClassSelect = document.getElementById("testClassSelect");
 const testSelect = document.getElementById("testSelect");
 const testVersionSelect = document.getElementById("testVersionSelect");
 const exportBtn = document.getElementById("exportBtn");
+const testToRubricBtn = document.getElementById("testToRubricBtn");
 const gradeTable = document.getElementById("gradeTable");
 
 const parentsClassSelect = document.getElementById("parentsClassSelect");
@@ -189,6 +190,14 @@ const parentsPublishStatus = document.getElementById("parentsPublishStatus");
 const parentsAccountsList = document.getElementById("parentsAccountsList");
 const warningArea = document.getElementById("warningArea");
 const facilitatedActionArea = document.getElementById("facilitatedActionArea");
+
+const rubricView = document.getElementById("rubricView");
+const rubricTestSelect = document.getElementById("rubricTestSelect");
+const rubricVersionSelect = document.getElementById("rubricVersionSelect");
+const rubricTable = document.getElementById("rubricTable");
+const rubricPrintBtn = document.getElementById("rubricPrintBtn");
+const rubricEmptyState = document.getElementById("rubricEmptyState");
+const rubricPrintTitle = document.getElementById("rubricPrintTitle");
 
 const configTestSelect = document.getElementById("configTestSelect");
 const testTitleInput = document.getElementById("testTitle");
@@ -315,6 +324,34 @@ function init() {
     saveState();
     renderTestTable();
   });
+
+  if (rubricTestSelect) {
+    rubricTestSelect.addEventListener("change", (event) => {
+      state.selectedTestId = event.target.value;
+      // Nuova verifica selezionata: la versione precedente potrebbe non
+      // esistere più, quindi resettiamo prima di far ripartire ensureVersionSelections().
+      state.selectedTestVersionId = null;
+      ensureVersionSelections();
+      saveState();
+      renderRubricGrid();
+    });
+  }
+  if (rubricVersionSelect) {
+    rubricVersionSelect.addEventListener("change", (event) => {
+      state.selectedTestVersionId = event.target.value;
+      saveState();
+      renderRubricGrid();
+    });
+  }
+  if (rubricPrintBtn) {
+    rubricPrintBtn.addEventListener("click", () => {
+      document.body.classList.add("printing-rubric");
+      window.print();
+    });
+    window.addEventListener("afterprint", () => {
+      document.body.classList.remove("printing-rubric");
+    });
+  }
 
   if (parentsClassSelect) {
     parentsClassSelect.addEventListener("change", (event) => {
@@ -552,6 +589,13 @@ function init() {
   });
 
   exportBtn.addEventListener("click", exportCSV);
+  if (testToRubricBtn && rubricView) {
+    testToRubricBtn.addEventListener("click", () => {
+      // Stesso test/versione già selezionati in Valutazione: la griglia
+      // si apre già allineata, senza bisogno di riscegliere nulla.
+      setView("rubric");
+    });
+  }
 
   // Listener globale per Ctrl+C / Ctrl+V nella tabella voti
   document.addEventListener("keydown", (event) => {
@@ -665,6 +709,9 @@ function render() {
   }
   renderTestTable();
   renderParentsView();
+  if (rubricView) {
+    renderRubricGrid();
+  }
   updateView();
 }
 
@@ -675,10 +722,13 @@ function setView(view) {
 }
 
 function updateView() {
-  const views = [homeView, classView, testsView, testView, configView, parentsView].filter(Boolean);
+  const views = [homeView, classView, testsView, testView, configView, parentsView, rubricView].filter(Boolean);
   views.forEach((view) => view.classList.remove("active"));
 
   if (state.view === "config" && !configView) {
+    state.view = "home";
+  }
+  if (state.view === "rubric" && !rubricView) {
     state.view = "home";
   }
 
@@ -695,6 +745,16 @@ function updateView() {
       // state.selectedTestId, che potrebbero essere cambiati da un'altra vista
       // (es. Genitori) mentre eravamo altrove.
       renderTestTable();
+      break;
+    case "rubric":
+      if (rubricView) {
+        rubricView.classList.add("active");
+        // Stesso motivo di "test": riallinea Verifica/Versione a quelle
+        // correnti, e ricostruisce la griglia dai dati aggiornati.
+        renderRubricGrid();
+      } else {
+        homeView.classList.add("active");
+      }
       break;
     case "parents":
       if (parentsView) {
@@ -1359,6 +1419,21 @@ function renderTestsList() {
       setView("test");
     });
     actions.appendChild(evalBtn);
+
+    if (rubricView) {
+      const rubricBtn = document.createElement("button");
+      rubricBtn.type = "button";
+      rubricBtn.classList.add("icon-btn", "btn-secondary");
+      rubricBtn.textContent = "📐";
+      rubricBtn.title = "Crea o stampa la griglia di valutazione di questa verifica";
+      rubricBtn.addEventListener("click", () => {
+        state.selectedTestId = test.id;
+        ensureVersionSelections();
+        saveState();
+        setView("rubric");
+      });
+      actions.appendChild(rubricBtn);
+    }
 
     if (configView) {
       const configBtn = document.createElement("button");
@@ -2823,6 +2898,232 @@ function gradeTierClass(value) {
   if (numeric < 6) return "grade-tier-bad";
   if (numeric < 7) return "grade-tier-ok";
   return "grade-tier-good";
+}
+
+// =====================================================================
+//  GRIGLIA DI VALUTAZIONE ("rubric")
+//  Non è una struttura dati separata: le colonne SONO le stesse
+//  section.subsections[] della verifica/versione selezionata (stesso
+//  oggetto in memoria di renderTestTable). Aggiungere/rinominare/eliminare
+//  una colonna qui muta lo stesso array, quindi Valutazione la vede
+//  automaticamente al prossimo render — e viceversa.
+//  L'unico dato nuovo è subsection.rubric = { "3": "testo", "4": "testo" },
+//  una mappa voto→giudizio salvata sulla sottosezione stessa, quindi già
+//  sincronizzata su Firebase da saveGradingToFirebase() (che scrive
+//  l'intero state.tests) senza bisogno di alcun codice aggiuntivo.
+// =====================================================================
+
+function renderRubricGrid() {
+  if (!rubricView || !rubricTable) return;
+
+  rubricTestSelect.innerHTML = "";
+  state.tests.forEach((test) => {
+    const option = document.createElement("option");
+    option.value = test.id;
+    option.textContent = test.title || "Verifica";
+    if (test.id === state.selectedTestId) {
+      option.selected = true;
+    }
+    rubricTestSelect.appendChild(option);
+  });
+
+  const selectedTest = getSelectedTest();
+  rubricTable.innerHTML = "";
+  if (rubricPrintTitle) rubricPrintTitle.textContent = "";
+
+  if (!selectedTest) {
+    if (rubricVersionSelect) rubricVersionSelect.innerHTML = "";
+    if (rubricEmptyState) rubricEmptyState.style.display = "block";
+    return;
+  }
+  if (rubricEmptyState) rubricEmptyState.style.display = "none";
+
+  ensureTestVersions(selectedTest);
+  ensureVersionSelections();
+
+  rubricVersionSelect.innerHTML = "";
+  selectedTest.versions.forEach((version) => {
+    const option = document.createElement("option");
+    option.value = version.id;
+    option.textContent = version.name || "Versione";
+    if (version.id === state.selectedTestVersionId) {
+      option.selected = true;
+    }
+    rubricVersionSelect.appendChild(option);
+  });
+
+  const activeVersion =
+    getVersionById(selectedTest, state.selectedTestVersionId) ??
+    getDefaultVersion(selectedTest);
+  if (!activeVersion) return;
+
+  if (rubricPrintTitle) {
+    rubricPrintTitle.textContent =
+      `${selectedTest.title || "Verifica"} — Griglia di valutazione` +
+      (activeVersion.name ? ` (${activeVersion.name})` : "");
+  }
+
+  const sections = activeVersion.sections ?? [];
+
+  // Stessa regola di renderTestTable: ogni sezione ha almeno una sottosezione.
+  sections.forEach((section) => {
+    if (!Array.isArray(section.subsections)) {
+      section.subsections = [];
+    }
+    if (section.subsections.length === 0) {
+      section.subsections.push(
+        createSubsection({ weight: section.weight, max: section.max }, `${section.name}1`)
+      );
+      saveState();
+    }
+  });
+
+  // Quante righe di voto servono: dalla colonna col max più alto.
+  let globalMaxRow = 0;
+  sections.forEach((section) => {
+    const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+    section.subsections.forEach((sub) => {
+      const max = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+      globalMaxRow = Math.max(globalMaxRow, Math.ceil(max));
+    });
+  });
+
+  // ── Intestazione: stessa struttura a due righe di Valutazione (sezione + sottosezioni) ──
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const subHeaderRow = document.createElement("tr");
+
+  const voteHeader = document.createElement("th");
+  voteHeader.textContent = "Voto";
+  voteHeader.classList.add("student-col", "rubric-vote-col");
+  voteHeader.rowSpan = 2;
+  headerRow.appendChild(voteHeader);
+
+  sections.forEach((section) => {
+    const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+
+    const sectionTh = document.createElement("th");
+    sectionTh.colSpan = section.subsections.length;
+    const sectionWrap = document.createElement("div");
+    sectionWrap.classList.add("section-header-cell");
+    const sectionLabel = document.createElement("span");
+    sectionLabel.textContent = section.name || "Sezione";
+    sectionWrap.appendChild(sectionLabel);
+    sectionTh.appendChild(sectionWrap);
+    headerRow.appendChild(sectionTh);
+
+    section.subsections.forEach((sub, idx) => {
+      const isLast = idx === section.subsections.length - 1;
+      const subTh = document.createElement("th");
+      subTh.classList.add("subheader");
+      if (isLast) subTh.classList.add("section-divider");
+
+      const subWrap = document.createElement("div");
+      subWrap.classList.add("subheader-cell");
+
+      const subName = document.createElement("input");
+      subName.type = "text";
+      subName.value = sub.name || "Sub";
+      subName.title = "Nome colonna (sincronizzato con Valutazione)";
+      subName.addEventListener("change", (e) => {
+        sub.name = e.target.value;
+        saveState();
+        renderRubricGrid();
+      });
+      subWrap.appendChild(subName);
+
+      const maxBadge = document.createElement("span");
+      maxBadge.className = "rubric-max-badge";
+      maxBadge.textContent = `/${getSubsectionMax(section, sub, fallbackPerSub)}`;
+      maxBadge.title = "Voto massimo di questa colonna (si modifica in Valutazione)";
+      subWrap.appendChild(maxBadge);
+
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.classList.add("btn", "btn-secondary", "btn-small", "section-add-btn");
+      addBtn.textContent = "+";
+      addBtn.title = "Aggiungi colonna a questa sezione";
+      addBtn.addEventListener("click", () => {
+        const nextSubName = `${section.name}${section.subsections.length + 1}`;
+        const lastSub = section.subsections[section.subsections.length - 1];
+        section.subsections.push(createSubsection(lastSub, nextSubName));
+        saveState();
+        renderRubricGrid();
+      });
+      subWrap.appendChild(addBtn);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.classList.add("subsection-remove");
+      removeBtn.textContent = "×";
+      removeBtn.title = "Elimina questa colonna e i voti già inseriti in Valutazione";
+      removeBtn.addEventListener("click", () => {
+        if (!confirm(`Eliminare la colonna "${sub.name}"? I voti già inseriti in Valutazione per questa colonna andranno persi.`)) return;
+        section.subsections = section.subsections.filter((item) => item.id !== sub.id);
+        removeSubsectionScores(section.id, sub.id, selectedTest.id);
+        saveState();
+        renderRubricGrid();
+      });
+      subWrap.appendChild(removeBtn);
+
+      subTh.appendChild(subWrap);
+      subHeaderRow.appendChild(subTh);
+    });
+  });
+
+  thead.appendChild(headerRow);
+  thead.appendChild(subHeaderRow);
+  rubricTable.appendChild(thead);
+
+  // ── Corpo: una riga per ogni voto possibile, da 0 al massimo tra le colonne ──
+  const tbody = document.createElement("tbody");
+  for (let voteValue = 0; voteValue <= globalMaxRow; voteValue++) {
+    const row = document.createElement("tr");
+
+    const voteTd = document.createElement("td");
+    voteTd.classList.add("rubric-vote-cell");
+    voteTd.textContent = voteValue;
+    row.appendChild(voteTd);
+
+    sections.forEach((section) => {
+      const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+      section.subsections.forEach((sub, idx) => {
+        const isLast = idx === section.subsections.length - 1;
+        const td = document.createElement("td");
+        td.classList.add("rubric-cell");
+        if (isLast) td.classList.add("section-divider");
+
+        const subMax = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+        if (voteValue > subMax) {
+          // Voto non raggiungibile in questa colonna: cella disattivata.
+          td.classList.add("rubric-cell-disabled");
+          td.textContent = "—";
+        } else {
+          if (!sub.rubric || typeof sub.rubric !== "object") {
+            sub.rubric = {};
+          }
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Giudizio…";
+          input.value = sub.rubric[voteValue] ?? "";
+          input.addEventListener("change", (e) => {
+            const val = e.target.value;
+            if (val.trim()) {
+              sub.rubric[voteValue] = val;
+            } else {
+              delete sub.rubric[voteValue];
+            }
+            saveState();
+          });
+          td.appendChild(input);
+        }
+        row.appendChild(td);
+      });
+    });
+
+    tbody.appendChild(row);
+  }
+  rubricTable.appendChild(tbody);
 }
 
 function parseNumber(value) {

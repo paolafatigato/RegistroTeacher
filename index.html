@@ -179,6 +179,7 @@
             <select id="testVersionSelect"></select>
           </div>
           <button id="exportBtn" class="btn btn-secondary">⬇️ Export CSV</button>
+          <button id="testToRubricBtn" class="btn btn-secondary">📐 Griglia</button>
         </div>
       </div>
 
@@ -200,6 +201,45 @@
 
       <div id="warningArea" class="warning-area"></div>
     </section>
+    </section>
+
+    <!-- ================= GRIGLIA DI VALUTAZIONE =================
+         Colonne = le stesse sottosezioni di "Valutazione" (stesso array
+         section.subsections in state.tests): aggiungerne/rinominarne una
+         qui si riflette in Valutazione, e viceversa, perché è letteralmente
+         lo stesso dato, non una copia sincronizzata.
+         Righe = i voti possibili (0..max) di ogni colonna.
+    ================================================================ -->
+    <section id="rubricView" class="panel view">
+      <div class="panel-header">
+        <h2>📐 Griglia di valutazione</h2>
+        <div class="panel-actions" style="margin-bottom:0;">
+          <div class="field">
+            <label for="rubricTestSelect">Verifica</label>
+            <select id="rubricTestSelect"></select>
+          </div>
+          <div class="field">
+            <label for="rubricVersionSelect">Versione</label>
+            <select id="rubricVersionSelect"></select>
+          </div>
+          <button id="rubricPrintBtn" class="btn btn-secondary">🖨️ Stampa griglia</button>
+        </div>
+      </div>
+
+      <p class="paste-hint">
+        💡 Le colonne sono le stesse sottosezioni che vedi in "Valutazione": aggiungerne, rinominarne o
+        eliminarne una qui si riflette anche lì, e viceversa. Scrivi un giudizio per ogni voto possibile —
+        se più voti hanno lo stesso giudizio, scrivilo su ogni riga (come su Excel).
+      </p>
+
+      <div id="rubricEmptyState" class="warning-area" style="display:none;">Crea prima una verifica in "Verifiche" per costruire la sua griglia.</div>
+
+      <div id="rubricPrintArea">
+        <h3 id="rubricPrintTitle" class="rubric-print-title"></h3>
+        <div class="table-wrapper">
+          <table id="rubricTable" class="grade-table rubric-table"></table>
+        </div>
+      </div>
     </section>
 
     <!-- ================= VISTA GENITORI ================= -->
