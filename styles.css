@@ -1,7 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   --pastel-pink: #FFBEC6;
   --flame-orange: #FE5007;
   --glaucous: #6D86C8;
+  --glaucous-dark: #55699f;
   --goodgrade: #3F784C;
   --quiteok: #C2B97F;
   --verybad: #A30B37;
@@ -10,6 +13,21 @@
   --white: #ffffff;
   --light-row: #fff7ef;
   --shadow: rgba(36, 36, 36, 0.08);
+
+  /* ── Nuovi design token: usati per rifinire la grafica senza toccare
+     nessuna delle variabili sopra (restano invariate per compatibilità) ── */
+  --font-heading: "Poppins", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow-soft: 0 6px 18px rgba(36, 36, 36, 0.08);
+  --shadow-lift: 0 12px 28px rgba(36, 36, 36, 0.14);
+  --shadow-inset: inset 0 0 0 1.5px rgba(109, 134, 200, 0.18);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --good-bg: rgba(63, 120, 76, 0.13);
+  --ok-bg: rgba(194, 185, 127, 0.28);
+  --bad-bg: rgba(163, 11, 55, 0.12);
 
   /* Palette "Genitori" */
   --zaino-100:#d9ef9a;
@@ -38,16 +56,24 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-body);
   background: var(--antique-white);
   color: var(--text-dark);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
 }
 
 .app-header {
-  background: var(--glaucous);
+  background: linear-gradient(135deg, var(--glaucous) 0%, var(--glaucous-dark) 100%);
   color: var(--white);
-  padding: 24px 32px;
-  box-shadow: 0 4px 10px var(--shadow);
+  padding: 22px 32px;
+  box-shadow: 0 4px 16px rgba(36, 36, 36, 0.18);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .header-content {
@@ -72,6 +98,29 @@ body {
 
 .header-content h1 {
   margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  font-size: 22px;
+}
+
+.nav-actions .btn-secondary {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--white);
+  backdrop-filter: blur(2px);
+}
+
+.nav-actions .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.nav-actions .btn-danger {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffe3e3;
+}
+
+.nav-actions .btn-danger:hover {
+  background: var(--flame-orange);
+  color: var(--white);
 }
 
 .view {
@@ -83,17 +132,20 @@ body {
 }
 
 .container {
-  padding: 32px;
+  padding: 28px 32px 48px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 28px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .panel {
   background: var(--white);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 6px 18px var(--shadow);
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
+  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(109, 134, 200, 0.08);
 }
 
 .panel-header {
@@ -102,7 +154,15 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1.5px solid rgba(109, 134, 200, 0.14);
+}
+
+.panel-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .panel-header--actions {
@@ -167,10 +227,32 @@ body {
 .panel-actions input,
 .panel-actions select {
   padding: 10px 14px;
-  border-radius: 8px;
-  border: 2px solid var(--pastel-pink);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #e6d3d7;
+  background: var(--white);
   font-size: 14px;
+  font-family: inherit;
   min-width: 220px;
+  color: var(--text-dark);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.bulk-students textarea:focus,
+.panel-actions textarea:focus,
+.panel-actions input:focus,
+.panel-actions select:focus {
+  outline: none;
+  border-color: var(--glaucous);
+  box-shadow: 0 0 0 3px rgba(109, 134, 200, 0.18);
+}
+
+.panel-actions select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath fill='%236D86C8' d='M1 1l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
 }
 
 .grade-link {
@@ -226,9 +308,11 @@ body {
 }
 
 .field label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #3f3f3f;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--glaucous-dark);
 }
 
 .field input {
@@ -259,14 +343,66 @@ body {
   border-radius: 10px;
 }
 
+/* ── Legenda colori voto / commenti, sopra la tabella ──────────────── */
+.grade-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: #666;
+}
+
+.grade-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.grade-legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.grade-legend-dot.grade-tier-good { background: var(--goodgrade); }
+.grade-legend-dot.grade-tier-ok   { background: var(--quiteok); }
+.grade-legend-dot.grade-tier-bad  { background: var(--verybad); }
+
+.grade-legend-corner {
+  width: 11px;
+  height: 11px;
+  display: inline-block;
+  border-style: solid;
+  border-width: 0 11px 11px 0;
+  border-color: transparent var(--flame-orange) transparent transparent;
+}
+
 .table-wrapper {
   overflow-x: auto;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  border: 1.5px solid rgba(109, 134, 200, 0.14);
+  /* "Scroll shadow" — un accenno di ombra sui bordi quando la tabella
+     scorre orizzontalmente, per far capire che c'è altro da vedere */
+  background:
+    linear-gradient(var(--white) 30%, rgba(255,255,255,0)),
+    linear-gradient(rgba(255,255,255,0), var(--white) 70%) 0 100%,
+    radial-gradient(farthest-side at 0 50%, rgba(36,36,36,0.12), rgba(36,36,36,0)),
+    radial-gradient(farthest-side at 100% 50%, rgba(36,36,36,0.12), rgba(36,36,36,0)) 100% 0;
+  background-repeat: no-repeat;
+  background-size: 100% 20px, 100% 20px, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
 
 .grade-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   min-width: 920px;
+  font-size: 13.5px;
 }
 
 /* Fixed-width student column */
@@ -282,31 +418,67 @@ body {
 
 .grade-table th,
 .grade-table td {
-  border: 1px solid #e0e0e0;
-  padding: 8px 10px;
+  border: 1px solid #ececec;
+  border-top: none;
+  border-left: none;
+  padding: 9px 10px;
   text-align: center;
 }
 
 .grade-table th.section-divider,
 .grade-table td.section-divider {
-  border-right: 2px solid var(--pastel-pink);
+  border-right: 2.5px solid var(--pastel-pink);
 }
 
 .grade-table th input {
   width: 100%;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
   font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
   text-align: center;
-  background: transparent;
-  border-color: transparent;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.grade-table th input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.grade-table th input:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .grade-table th input:focus {
   background: var(--white);
-  border-color: #d0d0d0;
+  color: var(--text-dark);
+  border-color: var(--white);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+
+/* Le sotto-intestazioni hanno sfondo chiaro (rosa/pesca): gli input restano
+   leggibili con un contrasto invertito rispetto alle intestazioni scure */
+.grade-table th.subheader input {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-dark);
+}
+
+.grade-table th.subheader input::placeholder {
+  color: rgba(63, 63, 63, 0.55);
+}
+
+.grade-table th.subheader input:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.grade-table th.subheader input:focus {
+  background: var(--white);
+  border-color: var(--glaucous);
+  box-shadow: 0 0 0 3px rgba(109, 134, 200, 0.25);
 }
 
 .section-header-cell {
@@ -357,9 +529,13 @@ body {
 /* Position add and remove separately so + remains visible */
 .section-header-cell .section-add-btn {
   right: 46px;
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .section-header-cell .section-remove-btn {
   right: 8px;
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .subheader-cell .subsection-remove {
   right: 8px;
@@ -378,11 +554,11 @@ body {
 
 /* Header comment trigger colors: map has-comment to fuchsia for pink subheaders,
    and to azzurro for blue/glaucous headers. */
-.grade-table thead th.subheader .comment-trigger.has-comment {
-  background: #E85D9D; /* fucsia */
+.grade-table thead th.subheader .comment-trigger.has-comment::after {
+  border-color: transparent #E85D9D transparent transparent; /* fucsia */
 }
-.grade-table thead th:not(.subheader) .comment-trigger.has-comment {
-  background: #6ec6ff; /* azzurro */
+.grade-table thead th:not(.subheader) .comment-trigger.has-comment::after {
+  border-color: transparent #ffffff transparent transparent; /* bianco, visibile su sfondo blu */
 }
 
 /* Color the whole header cell when it contains a header comment */
@@ -417,8 +593,10 @@ body {
 
 /* Constrain thead row heights — prevents rowspan height explosion */
 .grade-table thead th {
-  padding: 4px 8px;
-  font-size: 13px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.2px;
   position: relative; /* make header cells the positioning context for overlay buttons */
 }
 
@@ -428,7 +606,7 @@ body {
   min-width: 60px;
   padding: 0;
   position: relative;   /* needed for absolute child */
-  background: var(--glaucous);
+  background: var(--glaucous-dark);
 }
 
 .grade-table th.final-col,
@@ -449,18 +627,21 @@ body {
   color: #0b2c4a;
   border: none;
   font-weight: 700;
+  font-family: var(--font-heading);
   cursor: pointer;
   font-size: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   writing-mode: vertical-rl;
   letter-spacing: 1px;
-  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s var(--ease), transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
   padding: 0 2px;
 }
 
 .btn-add-section-bar:hover {
   background: #8bd3ff;
-  transform: scale(1.03);
+  transform: scale(1.04);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
 .add-section-col-td {
@@ -525,18 +706,21 @@ body {
 .check-label-th input {
   width: 100%;
   font-size: 10px;
+  font-family: inherit;
   text-align: center;
   padding: 3px 4px;
   border-radius: 5px;
   border: 1px solid rgba(109,134,200,0.4);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.6);
   color: #3f3f3f;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
 }
 
 .check-label-th input:focus {
   background: white;
   outline: none;
   border-color: var(--glaucous);
+  box-shadow: 0 0 0 2px rgba(109, 134, 200, 0.2);
 }
 
 /* Narrow DSA column — shrinks to content width */
@@ -544,7 +728,11 @@ body {
 .grade-table td.dsa-cell {
   width: 1%;
   white-space: nowrap;
-  padding: 4px 6px;
+  padding: 4px 8px;
+}
+
+.grade-table td.dsa-cell {
+  background: rgba(109, 134, 200, 0.05);
 }
 
 .subheader-cell {
@@ -558,73 +746,93 @@ body {
   height: 22px;
   border-radius: 50%;
   border: none;
-  background: #f5f5f5;
-  color: #555;
+  background: rgba(255, 255, 255, 0.7);
+  color: #7a1a1a;
   font-weight: 700;
   cursor: pointer;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s ease, transform 0.1s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: background 0.15s var(--ease), transform 0.15s var(--ease);
 }
 
 .subsection-remove:hover {
-  background: #ffd6d6;
-  transform: translateY(-1px);
+  background: #ffb3b3;
+  transform: translateY(-1px) scale(1.05);
 }
 
 .grade-table th {
   background: var(--glaucous);
   color: var(--white);
   font-weight: 600;
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .grade-table th.subheader {
   background: var(--pastel-pink);
   color: #3f3f3f;
+  border-color: rgba(63, 63, 63, 0.1);
 }
 
 .grade-table tr:nth-child(even) td {
   background: var(--light-row);
 }
 
+.grade-table tbody tr:hover td {
+  background: rgba(109, 134, 200, 0.09);
+}
+
 .grade-table tr.facilitated-row td {
   background: linear-gradient(90deg, rgba(109, 134, 200, 0.18), rgba(255, 190, 198, 0.22)) !important;
 }
 
+.grade-table tr.facilitated-row:hover td {
+  background: linear-gradient(90deg, rgba(109, 134, 200, 0.26), rgba(255, 190, 198, 0.3)) !important;
+}
+
 .grade-table tr.version-mismatch td {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .grade-table input {
   width: 100%;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
   text-align: center;
+  font-family: inherit;
   font-size: 14px;
+  padding: 3px 4px;
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 
 #classStudentsTable input {
   text-align: left;
 }
 
+.grade-table input:hover {
+  background: rgba(109, 134, 200, 0.06);
+}
+
 .grade-table input:focus {
-  outline: 2px solid var(--pastel-pink);
+  outline: none;
   background: var(--white);
+  box-shadow: 0 0 0 2.5px var(--pastel-pink);
 }
 
 .grade-table input.selected {
   background: #FFFACD;
-  outline: 2px solid var(--flame-orange);
+  box-shadow: 0 0 0 2.5px var(--flame-orange);
 }
 
 .grade-table input.selected:focus {
   background: #FFFFE0;
-  outline: 2px solid var(--flame-orange);
+  box-shadow: 0 0 0 2.5px var(--flame-orange);
 }
 
-/* ── Comment trigger: bordo destro cliccabile ─────────────────────── */
+/* ── Comment trigger: angolo "ripiegato" cliccabile, come le note di Excel ── */
 .grade-table tbody td {
   position: relative;
 }
@@ -633,45 +841,63 @@ body {
   position: absolute;
   top: 0;
   right: 0;
-  width: 5px;
+  width: 16px;
   height: 100%;
-  background: #d8d8d8;
+  background: transparent;
   cursor: pointer;
   z-index: 2;
-  transition: background 0.15s, width 0.15s;
 }
 
-.comment-trigger:hover {
-  background: var(--glaucous);
-  width: 7px;
+.comment-trigger::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 10px 10px 0;
+  border-color: transparent #d0d0d0 transparent transparent;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), border-color 0.15s var(--ease);
 }
 
-.comment-trigger.has-comment {
-  background: var(--flame-orange);
+.grade-table tbody td:hover .comment-trigger::after {
+  opacity: 1;
 }
 
-.comment-trigger.has-comment:hover {
-  background: #cc3c00;
-  width: 7px;
+.comment-trigger:hover::after {
+  opacity: 1;
+  border-color: transparent var(--glaucous) transparent transparent;
+}
+
+.comment-trigger.has-comment::after {
+  opacity: 1;
+  border-color: transparent var(--flame-orange) transparent transparent;
+}
+
+.comment-trigger.has-comment:hover::after {
+  border-color: transparent #cc3c00 transparent transparent;
 }
 
 /* ── Dialog commento ───────────────────────────────────────────────── */
 #commentDialog {
-  border: 2px solid var(--pastel-pink);
-  border-radius: 14px;
+  border: none;
+  border-radius: var(--radius-lg);
   padding: 0;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-lift), 0 0 0 2px var(--pastel-pink);
   min-width: 320px;
   max-width: 480px;
   width: 90vw;
 }
 
 #commentDialog::backdrop {
-  background: rgba(0,0,0,0.4);
+  background: rgba(36, 36, 36, 0.45);
+  backdrop-filter: blur(1px);
 }
 
 .comment-dialog-inner {
-  padding: 24px;
+  padding: 26px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -679,23 +905,33 @@ body {
 
 .comment-dialog-inner h3 {
   margin: 0;
-  color: var(--glaucous);
+  color: var(--glaucous-dark);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-dialog-inner h3::before {
+  content: "💬";
+  font-size: 0.85em;
 }
 
 #commentTextarea {
   width: 100%;
-  padding: 10px 12px;
-  border: 2px solid var(--pastel-pink);
-  border-radius: 8px;
+  padding: 12px 14px;
+  border: 1.5px solid #e6d3d7;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-family: inherit;
   resize: vertical;
   min-height: 90px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 
 #commentTextarea:focus {
   outline: none;
   border-color: var(--glaucous);
+  box-shadow: 0 0 0 3px rgba(109, 134, 200, 0.18);
 }
 
 .comment-dialog-actions {
@@ -706,6 +942,7 @@ body {
 
 .grade-table .student-cell input {
   text-align: left;
+  font-weight: 600;
 }
 
 .grade-table .total-cell {
@@ -713,17 +950,38 @@ body {
 }
 
 .grade-table .final-cell {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 15px;
+  font-family: var(--font-heading);
 }
 
 .grade-table td.final-cell.cross-version-score {
   color: #aaaaaa;
   font-style: italic;
   font-weight: 400;
+  font-family: inherit;
+}
+
+/* ── Fasce colore del voto finale ──────────────────────────────────
+   Sfruttano la palette --goodgrade / --quiteok / --verybad, già definita
+   nel progetto ma finora mai collegata: ≥7 verde, 6–6.9 giallo, <6 rosso. */
+.grade-table td.final-cell.grade-tier-good {
+  background: var(--good-bg);
+  color: var(--goodgrade);
+}
+
+.grade-table td.final-cell.grade-tier-ok {
+  background: var(--ok-bg);
+  color: #7a6b2e;
+}
+
+.grade-table td.final-cell.grade-tier-bad {
+  background: var(--bad-bg);
+  color: var(--verybad);
 }
 
 #facilitatedActionArea {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .btn-copy-from-standard {
@@ -734,17 +992,29 @@ body {
 }
 
 .low-grade {
-  color: var(--flame-orange);
+  color: var(--verybad);
   font-weight: 700;
 }
 
 .btn {
   border: none;
-  border-radius: 10px;
-  padding: 10px 16px;
+  border-radius: 999px;
+  padding: 10px 18px;
   font-weight: 600;
+  font-family: inherit;
+  font-size: 14px;
   cursor: pointer;
-  transition: transform 0.1s ease, background 0.2s ease;
+  transition: transform 0.15s var(--ease), background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  box-shadow: 0 2px 6px rgba(36, 36, 36, 0.06);
+}
+
+.btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.btn:focus-visible {
+  outline: 2.5px solid var(--glaucous);
+  outline-offset: 2px;
 }
 
 .icon-btn {
@@ -759,12 +1029,14 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.1s ease, background 0.2s ease;
+  box-shadow: 0 2px 6px rgba(36, 36, 36, 0.1);
+  transition: transform 0.15s var(--ease), background 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 
 .icon-btn:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.05);
   background: #ff6a2a;
+  box-shadow: var(--shadow-lift);
 }
 
 .card-delete {
@@ -780,7 +1052,7 @@ body {
 
 .btn:hover {
   transform: translateY(-1px);
-  background: var(--pastel-pink);
+  box-shadow: var(--shadow-lift);
 }
 
 .btn-primary {
@@ -788,14 +1060,26 @@ body {
   color: var(--white);
 }
 
+.btn-primary:hover {
+  background: var(--glaucous-dark);
+}
+
 .btn-secondary {
   background: var(--pastel-pink);
   color: #3f3f3f;
 }
 
+.btn-secondary:hover {
+  background: #ffd0d7;
+}
+
 .btn-danger {
   background: var(--flame-orange);
   color: var(--white);
+}
+
+.btn-danger:hover {
+  background: #e2480a;
 }
 
 .warning-area {
@@ -806,10 +1090,27 @@ body {
 }
 
 .warning {
-  background: rgba(254, 80, 7, 0.12);
+  background: var(--bad-bg);
   border-left: 4px solid var(--flame-orange);
-  padding: 8px 12px;
-  border-radius: 6px;
+  color: #7a1a1a;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+}
+
+/* Suggerimento "Incolla da Excel": prima era testo semplice senza stile */
+.paste-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: rgba(109, 134, 200, 0.08);
+  border: 1.5px dashed rgba(109, 134, 200, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #4a4a4a;
+  line-height: 1.5;
 }
 
 .info-list {
@@ -818,8 +1119,9 @@ body {
 
 .app-footer {
   text-align: center;
-  padding: 16px;
-  color: #5a5a5a;
+  padding: 20px;
+  color: #8a8a8a;
+  font-size: 13px;
 }
 
 @media (max-width: 960px) {
@@ -836,6 +1138,30 @@ body {
   .bulk-students {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .container {
+    padding: 18px 14px 32px;
+  }
+
+  .panel {
+    padding: 18px 16px;
+  }
+
+  .grade-table {
+    font-size: 12px;
+  }
+
+  .grade-table th,
+  .grade-table td {
+    padding: 6px 6px;
+  }
+
+  .grade-table th.student-col,
+  .grade-table td.student-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
   }
 }
 
@@ -889,6 +1215,10 @@ body {
 .grade-table.facilitata-version th.subheader {
   background: #F5A6C4;
   color: #1a1a1a;
+}
+
+.grade-table.facilitata-version .add-section-col-th {
+  background: #c8478a;
 }
 
 .grade-table.facilitata-version input:disabled {

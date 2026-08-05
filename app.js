@@ -204,6 +204,29 @@ const sectionsContainer = document.getElementById("sectionsContainer");
 const sectionTemplate = document.getElementById("sectionTemplate");
 const subsectionTemplate = document.getElementById("subsectionTemplate");
 
+// ── Variabili di stato dichiarate qui, PRIMA di init() ──────────────────
+// In origine erano dichiarate molto più in basso nel file (con `let`, a
+// centinaia di righe di distanza). init() può però raggiungerle prima
+// (tramite il caricamento dati di Firebase, che chiama render() in modo
+// asincrono): se questo succede prima che l'interprete arrivi a quelle
+// righe, la variabile resta bloccata per sempre in "temporal dead zone" e
+// ogni lettura successiva lancia "Cannot access ... before initialization",
+// mandando in crash il pannello Verifiche e il pulsante "Nuova verifica".
+// Dichiararle qui in cima le rende sempre disponibili fin dal primo istante.
+let _archivedTestsPanelOpen = false;
+let _selectedArchivedTestTemplate = null;
+let _archivedTestPickerBuilt = false;
+let _newTestClassesFieldBuilt = false;
+let parentAccountDialogContext = null;
+// Stato di selezione multipla nella tabella voti (copia/incolla stile Excel)
+let selectionState = {
+  selectedInputs: new Set(),
+  clipboard: null,
+  clipboardLayout: null, // { rows, cols } per paste smarter
+  isSelecting: false,
+  startInput: null,
+};
+
 init();
 
 function init() {
@@ -905,7 +928,7 @@ function renderClassDetail() {
   classStudentsTable.appendChild(tbody);
 }
 
-let _archivedTestsPanelOpen = false;
+// _archivedTestsPanelOpen è dichiarata in cima al file (prima di init()).
 
 /**
  * Costruisce (o ricostruisce) lo spazio dedicato alle verifiche archiviate:
@@ -2299,29 +2322,45 @@ function renderTestTable() {
 
     // Cross-version: DSA student on standard page → grey facilitated score;
     //                non-DSA student on facilitated page → grey standard score
-    let scoreToShow, isCrossVersion;
+    let scoreToShow, isCrossVersion, versionForScore;
     if (isViewingFacilitatedVersion) {
       if (isFacilitated) {
-        scoreToShow = getFinalScore(student, selectedTest, activeVersion);
+        versionForScore = activeVersion;
+        scoreToShow = getFinalScore(student, selectedTest, versionForScore);
         isCrossVersion = false;
       } else {
-        scoreToShow = getFinalScore(student, selectedTest, defaultVersion);
+        versionForScore = defaultVersion;
+        scoreToShow = getFinalScore(student, selectedTest, versionForScore);
         isCrossVersion = true;
       }
     } else {
       if (isFacilitated) {
-        scoreToShow = getFinalScore(student, selectedTest, facilitatedVersionObj);
+        versionForScore = facilitatedVersionObj;
+        scoreToShow = getFinalScore(student, selectedTest, versionForScore);
         isCrossVersion = true;
       } else {
-        scoreToShow = getFinalScore(student, selectedTest, activeVersion);
+        versionForScore = activeVersion;
+        scoreToShow = getFinalScore(student, selectedTest, versionForScore);
         isCrossVersion = false;
       }
     }
-    finalCell.textContent = formatScore(scoreToShow);
-    if (isCrossVersion) {
-      finalCell.classList.add("cross-version-score");
-    } else if (isLowGrade(scoreToShow)) {
-      finalCell.classList.add("low-grade");
+
+    const notGradedYet = !isCrossVersion && !hasAnyScoreEntered(student, selectedTest, versionForScore);
+
+    if (notGradedYet) {
+      // Nessun voto inserito: non è "0 insufficiente", è semplicemente da fare.
+      finalCell.textContent = "—";
+      finalCell.classList.add("not-graded");
+      finalCell.title = "Nessun voto inserito ancora";
+    } else {
+      finalCell.textContent = formatScore(scoreToShow);
+      if (isCrossVersion) {
+        finalCell.classList.add("cross-version-score");
+      } else {
+        if (isLowGrade(scoreToShow)) finalCell.classList.add("low-grade");
+        const tierClass = gradeTierClass(scoreToShow);
+        if (tierClass) finalCell.classList.add(tierClass);
+      }
     }
     row.appendChild(finalCell);
 
@@ -2603,8 +2642,22 @@ function updateFinalCellInRow(input, student, test) {
   const activeVersion = getVersionById(selectedTest, state.selectedTestVersionId)
     ?? getDefaultVersion(selectedTest);
   const finalScore = getFinalScore(student, selectedTest, activeVersion);
+
+  finalCell.classList.remove("grade-tier-bad", "grade-tier-ok", "grade-tier-good", "not-graded");
+
+  if (!hasAnyScoreEntered(student, selectedTest, activeVersion)) {
+    finalCell.textContent = "—";
+    finalCell.classList.remove("low-grade");
+    finalCell.classList.add("not-graded");
+    finalCell.title = "Nessun voto inserito ancora";
+    return;
+  }
+
+  finalCell.title = "";
   finalCell.textContent = formatScore(finalScore);
   finalCell.classList.toggle("low-grade", isLowGrade(finalScore));
+  const tierClass = gradeTierClass(finalScore);
+  if (tierClass) finalCell.classList.add(tierClass);
 }
 
 function ensureScoreStore(student, testId, sectionId) {
@@ -2676,6 +2729,30 @@ function getFinalScore(student, test, version) {
   return (weightedSum * 10) / weightedMaxSum;
 }
 
+/**
+ * True se lo studente ha almeno un voto inserito (in una qualsiasi
+ * sezione/sottosezione) per questa verifica/versione.
+ * Usata SOLO per la grafica: distingue "non ancora valutato" (grigio)
+ * da "valutato con un voto basso" (rosso). getFinalScore() e il calcolo
+ * pesato non vengono toccati in nessun caso.
+ */
+function hasAnyScoreEntered(student, test, version) {
+  if (!test || !version) return false;
+  const sections = version.sections ?? [];
+  const testScores = student.scores?.[test.id];
+  if (!testScores) return false;
+  return sections.some((section) => {
+    const sectionScores = testScores[section.id];
+    if (!sectionScores) return false;
+    if (Array.isArray(section.subsections) && section.subsections.length > 0) {
+      return section.subsections.some(
+        (sub) => parseNumber(sectionScores.subsections?.[sub.id]) != null
+      );
+    }
+    return parseNumber(sectionScores.direct) != null;
+  });
+}
+
 // Verifica se un test ha almeno un voto in una classe
 function testHasGradesInClass(test, selectedClass) {
   if (!test || !selectedClass) {
@@ -2733,6 +2810,19 @@ function formatScore(score) {
 function isLowGrade(value) {
   const numeric = parseNumber(value);
   return numeric != null && numeric < 6;
+}
+
+/**
+ * Fascia colore del voto finale (solo visualizzazione — non tocca il calcolo).
+ * Soglie coerenti con quelle già usate in Classroom Manager per i gruppi:
+ * <6 insufficiente, 6–6.9 sufficiente, ≥7 buono/ottimo.
+ */
+function gradeTierClass(value) {
+  const numeric = parseNumber(value);
+  if (numeric == null) return "";
+  if (numeric < 6) return "grade-tier-bad";
+  if (numeric < 7) return "grade-tier-ok";
+  return "grade-tier-good";
 }
 
 function parseNumber(value) {
@@ -3054,8 +3144,8 @@ function buildTestFromTemplate(archivedTest, title, subject, category) {
   };
 }
 
-let _selectedArchivedTestTemplate = null;
-let _archivedTestPickerBuilt = false;
+// _selectedArchivedTestTemplate e _archivedTestPickerBuilt sono dichiarate
+// in cima al file (prima di init()).
 
 /**
  * Inserisce (una sola volta) il blocco "riusa da archiviata" nel form nuova
@@ -3206,8 +3296,7 @@ function refreshArchivedTestPicker() {
 }
 
 // ── Classi di destinazione della nuova verifica ─────────────────────────────
-
-let _newTestClassesFieldBuilt = false;
+// (_newTestClassesFieldBuilt è dichiarata in cima al file, prima di init())
 
 /** Inserisce (una sola volta) la checklist "per quali classi" nel form nuova verifica. */
 function ensureNewTestClassesField() {
@@ -4494,8 +4583,7 @@ function publishParentsForCurrentTest() {
 }
 
 // ── Accessi genitori (email + password) ──────────────────────────────
-
-let parentAccountDialogContext = null;
+// (parentAccountDialogContext è dichiarata in cima al file, prima di init())
 
 function initParentAccountDialog() {
   const dialog = document.getElementById("parentAccountDialog");
@@ -4626,16 +4714,8 @@ function escapeHtml(str) {
 // =====================================================================
 //  MULTI-SELECTION & COPY/PASTE FUNCTIONALITY
 //  Permette di selezionare più celle e copiarle/incollarle come Excel
+//  (selectionState è dichiarata in cima al file, prima di init())
 // =====================================================================
-
-// Stato di selezione
-let selectionState = {
-  selectedInputs: new Set(),
-  clipboard: null,
-  clipboardLayout: null, // { rows, cols } per paste smarter
-  isSelecting: false,
-  startInput: null,
-};
 
 /**
  * Inizializza la multi-selezione per un input della tabella.

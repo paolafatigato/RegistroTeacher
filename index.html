@@ -155,9 +155,16 @@
         </div>
       </div>
     </dialog>
+<!-- ================================================================
+         SEZIONE "VALUTAZIONE" — sostituisce il blocco <section id="testView">
+         esistente in index.html. Tutti gli id/classi richiesti da app.js
+         (testClassSelect, testSelect, testVersionSelect, exportBtn,
+         facilitatedActionArea, gradeTable, warningArea) sono INVARIATI:
+         il funzionamento resta identico, cambia solo la grafica intorno.
+         ================================================================ -->
     <section id="testView" class="panel view">
       <div class="panel-header">
-        <h2>Valutazione</h2>
+        <h2>📝 Valutazione</h2>
         <div class="panel-actions">
           <div class="field">
             <label for="testClassSelect">Classe</label>
@@ -171,15 +178,28 @@
             <label for="testVersionSelect">Versione</label>
             <select id="testVersionSelect"></select>
           </div>
-          <button id="exportBtn" class="btn btn-secondary">Export CSV</button>
+          <button id="exportBtn" class="btn btn-secondary">⬇️ Export CSV</button>
         </div>
       </div>
+
       <div id="facilitatedActionArea"></div>
+
+      <div class="grade-legend">
+        <span class="grade-legend-item"><span class="grade-legend-dot grade-tier-good"></span>≥ 7 buono/ottimo</span>
+        <span class="grade-legend-item"><span class="grade-legend-dot grade-tier-ok"></span>6 – 6,9 sufficiente</span>
+        <span class="grade-legend-item"><span class="grade-legend-dot grade-tier-bad"></span>&lt; 6 insufficiente</span>
+        <span class="grade-legend-item"><span class="grade-legend-dot not-graded"></span>non ancora valutato</span>
+        <span class="grade-legend-item"><span class="grade-legend-corner"></span>angolo colorato = c'è un commento</span>
+      </div>
+
       <div class="table-wrapper">
         <table id="gradeTable" class="grade-table"></table>
       </div>
+
       <p class="paste-hint">💡 <strong>Incolla da Excel:</strong> copia una colonna di voti in Excel, clicca sulla prima cella della colonna corrispondente e incolla — i valori si distribuiscono automaticamente verso il basso.</p>
+
       <div id="warningArea" class="warning-area"></div>
+    </section>
     </section>
 
     <!-- ================= VISTA GENITORI ================= -->
