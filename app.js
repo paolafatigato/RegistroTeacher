@@ -3212,8 +3212,8 @@ function openStudentRubricDialog(student, test, version) {
 
       const generalTh = document.createElement("th");
       generalTh.classList.add("subheader", "rubric-general-col");
-      generalTh.textContent = "GENERALE";
-      generalTh.title = sub.name ? `${sub.name} — giudizio generale (condiviso da tutti gli studenti)` : "Giudizio generale";
+      generalTh.textContent = (sub.name || "Sub").toUpperCase();
+      generalTh.title = "Giudizio generale — condiviso da tutti gli studenti (si modifica in \"📐 Griglia\")";
       subHeaderRow.appendChild(generalTh);
 
       const specificTh = document.createElement("th");

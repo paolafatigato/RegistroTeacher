@@ -2450,40 +2450,49 @@ h1, h2, h3 {
 }
 
 /* =====================================================================
-   TRIANGOLINO "griglia per studente" — colonna stretta a sinistra dei voti
+   Cella nome studente = trigger "griglia per studente"
+   Il nome non è più modificabile qui (si gestisce da ClassroomManager):
+   tutta la cella apre la griglia di valutazione dello studente; il
+   triangolino in alto a destra è solo l'indizio visivo, stesso linguaggio
+   grafico del trigger dei commenti (.comment-trigger).
 ===================================================================== */
-.grade-table th.expand-col,
-.grade-table td.expand-cell {
-  width: 1%;
-  min-width: 30px;
-  white-space: nowrap;
-  padding: 4px 6px;
+.grade-table td.student-cell {
+  position: relative;
 }
 
-.grade-table td.expand-cell {
-  background: rgba(109, 134, 200, 0.05);
+.student-name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.row-expand-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(109, 134, 200, 0.14);
-  color: var(--glaucous-dark);
-  font-size: 10px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  transition: background 0.15s var(--ease), transform 0.15s var(--ease), color 0.15s var(--ease);
+.rubric-name-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
 }
 
-.row-expand-btn:hover {
-  background: var(--glaucous);
-  color: var(--white);
-  transform: scale(1.1);
+.rubric-name-trigger::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 11px 11px 0;
+  border-color: transparent #c9c9c9 transparent transparent;
+  opacity: 0.55;
+  transition: opacity 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.grade-table td.student-cell:hover .rubric-name-trigger::after {
+  opacity: 1;
+  border-color: transparent var(--glaucous) transparent transparent;
 }
 
 /* =====================================================================
@@ -2514,6 +2523,13 @@ h1, h2, h3 {
   box-sizing: border-box;
 }
 
+.student-rubric-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
 .student-rubric-dialog-inner h3 {
   margin: 0;
   color: var(--glaucous-dark);
@@ -2523,6 +2539,12 @@ h1, h2, h3 {
   margin: 0;
   font-size: 12.5px;
   color: #888;
+}
+
+/* Il titolo dentro #studentRubricPrintArea serve solo in stampa: a schermo
+   il titolo "vero" è quello nell'header del dialog (studentRubricTitle). */
+#studentRubricPrintArea .rubric-print-title {
+  display: none;
 }
 
 #studentRubricTableWrapper {
@@ -2554,7 +2576,144 @@ h1, h2, h3 {
   min-width: 150px;
 }
 
+/* ── Evidenzia il voto già assegnato allo studente in "Valutazione" ────
+   Tinta leggera coerente con la palette del sito (stesso blu dell'header
+   e della colonna Voto), non l'arancione già usato per la colonna
+   specifica — così restano ben distinguibili. ──────────────────────── */
+.student-rubric-table td.rubric-vote-cell.rubric-cell-current {
+  background: var(--glaucous);
+  color: var(--white);
+  font-weight: 800;
+}
+
+.student-rubric-table td.rubric-cell-current {
+  background: rgba(109, 134, 200, 0.16);
+  box-shadow: inset 0 0 0 1.5px var(--glaucous);
+}
+
+.student-rubric-table td.rubric-cell-general.rubric-cell-current {
+  background: rgba(109, 134, 200, 0.14);
+  color: var(--text-dark);
+  font-weight: 600;
+}
+
+.student-rubric-table td.rubric-cell-specific.rubric-cell-current input {
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.6);
+}
+
 .student-rubric-dialog-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* ── Stampa: nasconde tutta la pagina e mostra solo la griglia di questo
+   studente. Pagina orizzontale, e soprattutto: nessun antenato (dialog,
+   wrapper) deve poter tagliare o far scorrere la tabella — altrimenti in
+   stampa esce solo la porzione visibile a schermo. Font e colonne si
+   restringono quanto basta perché tutto (righe E colonne) stia su un
+   solo A4, senza barra di scorrimento. ─────────────────────────────── */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body.printing-student-rubric * {
+    visibility: hidden;
+  }
+  body.printing-student-rubric #studentRubricPrintArea,
+  body.printing-student-rubric #studentRubricPrintArea * {
+    visibility: visible;
+    /* Molti browser stampano gli sfondi come bianchi se l'utente non ha
+       spuntato "Grafica di sfondo": qui i colori sono informazione
+       (evidenziazione voto), quindi li forziamo a stampare. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
+
+  /* Azzera qualsiasi limite di altezza/larghezza e qualsiasi scroll sugli
+     antenati (dialog, contenitore interno, wrapper della tabella): senza
+     questo, in stampa esce solo il pezzo di tabella visibile a schermo. */
+  body.printing-student-rubric #studentRubricDialog {
+    position: static !important;
+    max-width: none !important;
+    max-height: none !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  body.printing-student-rubric .student-rubric-dialog-inner {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  body.printing-student-rubric #studentRubricTableWrapper {
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: none !important;
+  }
+
+  body.printing-student-rubric #studentRubricPrintArea {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  body.printing-student-rubric #studentRubricPrintArea .rubric-print-title {
+    display: block;
+    font-size: 12px;
+    margin: 0 0 5px;
+  }
+
+  /* Tabella: layout automatico ma vincolato al 100% della pagina, senza
+     min-width sulle celle — così è la tabella a restringersi (font e
+     colonne), MAI a sporgere fuori pagina o a scorrere. */
+  body.printing-student-rubric .student-rubric-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: auto;
+    font-size: 9.5px;
+    line-height: 1.15;
+  }
+  body.printing-student-rubric .student-rubric-table th,
+  body.printing-student-rubric .student-rubric-table td {
+    padding: 3px 4px;
+    word-break: break-word;
+  }
+  body.printing-student-rubric .student-rubric-table th.rubric-vote-col,
+  body.printing-student-rubric .student-rubric-table td.rubric-vote-cell {
+    width: 24px !important;
+    min-width: 24px !important;
+    max-width: 24px !important;
+    padding: 3px 2px;
+  }
+  body.printing-student-rubric .student-rubric-table td.rubric-cell-general,
+  body.printing-student-rubric .student-rubric-table td.rubric-cell-specific,
+  body.printing-student-rubric .student-rubric-table td.rubric-cell-specific input {
+    min-width: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+  body.printing-student-rubric .student-rubric-table input {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: inherit;
+  }
+  /* Il segnaposto "Giudizio specifico…" è solo un aiuto in editing: in
+     stampa deve sparire, così le celle senza giudizio escono vuote. */
+  body.printing-student-rubric .student-rubric-table input::placeholder {
+    color: transparent !important;
+  }
+  body.printing-student-rubric dialog::backdrop {
+    display: none !important;
+  }
 }
