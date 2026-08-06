@@ -1924,6 +1924,11 @@ h1, h2, h3 {
   color: var(--text-dark);
 }
 
+.parent-publish-one-btn {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .parent-publish-badge {
   margin-left: auto;
   font-size: 12px;
@@ -2171,6 +2176,21 @@ h1, h2, h3 {
   font-weight: 700;
   color: var(--text-dark);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.parents-access-preview-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  background: var(--white);
+  border: 1.5px solid var(--docente-100);
+}
+
+.parents-access-preview-btn:hover {
+  background: var(--docente-100);
 }
 
 .parents-access-loading {
@@ -2284,6 +2304,15 @@ h1, h2, h3 {
   margin-top: 4px;
 }
 
+.parents-access-toast {
+  font-size: 12.5px;
+  color: #2f5b40;
+  background: var(--good-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 0;
+}
+
 .parents-access-mail-hint {
   font-size: 12px;
   color: #7a5c81;
@@ -2317,6 +2346,202 @@ h1, h2, h3 {
   margin-top: 28px;
   padding-top: 18px;
   border-top: 1.5px solid #f0f0f0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANTEPRIMA GENITORE — modale "vedi cosa vede il genitore",
+   con l'accesso da insegnante. Le regole delle schede-verifica
+   (.parent-test-card e affini) sono le STESSE di genitori.css,
+   riportate qui 1:1 per coerenza visiva con la pagina reale.
+   ═══════════════════════════════════════════════════════════ */
+
+#parentPreviewDialog {
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0;
+  box-shadow: var(--shadow-lift), 0 0 0 2px var(--docente-100);
+  min-width: 320px;
+  max-width: 560px;
+  width: 92vw;
+}
+
+#parentPreviewDialog::backdrop {
+  background: rgba(36, 36, 36, 0.45);
+  backdrop-filter: blur(1px);
+}
+
+.parent-preview-dialog-inner {
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 84vh;
+}
+
+.parent-preview-dialog-inner h3 {
+  margin: 0;
+  color: var(--docente-600);
+}
+
+.parent-preview-body {
+  overflow-y: auto;
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 2px; /* spazio per l'ombra delle card senza tagliarla */
+}
+
+.parent-preview-empty {
+  text-align: center;
+  color: #888;
+  font-size: 13.5px;
+  padding: 18px 12px;
+  margin: 0;
+}
+
+/* — Schede verifica, identiche a quelle di genitori.css — */
+.parent-test-card {
+  border: 1.5px solid #eee;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: #fffdfa;
+}
+
+.parent-test-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.parent-test-head h3 {
+  margin: 0;
+  color: var(--glaucous);
+  font-size: 16px;
+}
+
+.parent-test-subject {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  background: #f0f0f0;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.parent-final-score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.parent-final-score-label {
+  font-size: 13px;
+  color: #777;
+  font-weight: 600;
+}
+
+.parent-final-score-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--sonno-600);
+}
+
+.parent-test-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.parent-test-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--antique-white);
+  font-size: 13.5px;
+}
+
+.parent-test-section-row.mode-good { background: var(--zaino-100); color: #2f5b40; }
+.parent-test-section-row.mode-mid  { background: var(--org-100); color: #8a5b0f; }
+.parent-test-section-row.mode-bad  { background: var(--emozioni-100); color: #8a2a22; }
+
+.parent-test-section-label {
+  font-weight: 600;
+}
+
+.parent-test-section-value {
+  font-weight: 700;
+}
+
+.parent-test-comment {
+  background: var(--ansia-100);
+  color: #274257;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  margin-bottom: 8px;
+}
+
+.parent-test-rubric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--docente-100);
+}
+
+.parent-test-rubric-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--docente-600);
+}
+
+.parent-rubric-row {
+  background: var(--white);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.parent-rubric-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.parent-rubric-row-label {
+  font-weight: 600;
+}
+
+.parent-rubric-row-score {
+  font-weight: 700;
+  color: var(--sonno-600);
+  white-space: nowrap;
+}
+
+.parent-rubric-row-judgment {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #5a5a5a;
+  font-style: italic;
+}
+
+.parent-test-date {
+  font-size: 11.5px;
+  color: #aaa;
+  text-align: right;
 }
 
 .parents-accounts-header h3 {

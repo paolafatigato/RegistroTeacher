@@ -37,6 +37,8 @@ let fbDb = null;
 let fbUser = null;
 let publishedUnsub = null;
 let publishedRefPath = null;
+let currentParentTeacherUid = null;
+let currentParentStudents = []; // { studentId, studentName, className } — può contenere più figli (fratelli/sorelle)
 
 // ── Elementi DOM ──────────────────────────────────────────────────────
 const loginScreen = document.getElementById("parentLoginScreen");
@@ -48,6 +50,7 @@ const userBar = document.getElementById("parentUserBar");
 const userInfo = document.getElementById("parentUserInfo");
 const logoutBtn = document.getElementById("parentLogoutBtn");
 const studentHeader = document.getElementById("parentStudentHeader");
+const studentSwitcher = document.getElementById("parentStudentSwitcher");
 const testsList = document.getElementById("parentTestsList");
 const emptyMessage = document.getElementById("parentEmptyMessage");
 
@@ -92,6 +95,9 @@ function init() {
     } else {
       userBar.style.display = "none";
       detachPublishedListener();
+      currentParentTeacherUid = null;
+      currentParentStudents = [];
+      if (studentSwitcher) { studentSwitcher.style.display = "none"; studentSwitcher.innerHTML = ""; }
       showScreen("login");
     }
   });
@@ -118,23 +124,92 @@ function describeAuthError(err) {
   }
 }
 
-/** Recupera il collegamento genitore→studente e poi si mette in ascolto
- *  dei dati pubblicati per quello studente. */
+/** Recupera il collegamento genitore→studenti (uno o più, es. fratelli) e
+ *  mostra il primo, con uno switcher se ce n'è più di uno. */
 function loadParentLinkAndData(parentUid) {
   fbDb.ref(`/parentAccounts/${parentUid}`).once("value")
     .then((snapshot) => {
       const link = snapshot.val();
-      if (!link || !link.teacherUid || !link.studentId) {
+      const studentsMap = normalizeParentStudents(link);
+      const studentIds = Object.keys(studentsMap);
+      if (!link || !link.teacherUid || studentIds.length === 0) {
         showScreen("error");
         return;
       }
-      renderStudentHeader(link);
-      attachPublishedListener(link);
+      currentParentTeacherUid = link.teacherUid;
+      currentParentStudents = studentIds
+        .map((id) => studentsMap[id])
+        .sort((a, b) => (a.studentName || "").localeCompare(b.studentName || "", "it"));
+
+      renderStudentSwitcher(currentParentStudents);
+      selectParentStudent(currentParentStudents[0].studentId);
       showScreen("data");
     })
     .catch(() => {
       showScreen("error");
     });
+}
+
+/** Converte /parentAccounts/{uid} nella forma { studentId: {...} },
+ *  gestendo sia il formato attuale (students: {...}, più figli possibili)
+ *  sia quello "legacy" con un solo studentId in cima al record. */
+function normalizeParentStudents(link) {
+  if (!link) return {};
+  if (link.students && typeof link.students === "object") return link.students;
+  if (link.studentId) {
+    return {
+      [link.studentId]: {
+        studentId: link.studentId,
+        studentName: link.studentName || "",
+        className: link.className || "",
+      },
+    };
+  }
+  return {};
+}
+
+/** Mostra un piccolo selettore per passare da un figlio all'altro. Se il
+ *  genitore ha un solo figlio collegato, resta nascosto (nessun cambiamento
+ *  visibile rispetto a prima). */
+function renderStudentSwitcher(students) {
+  if (!studentSwitcher) return;
+  if (students.length <= 1) {
+    studentSwitcher.style.display = "none";
+    studentSwitcher.innerHTML = "";
+    return;
+  }
+  studentSwitcher.style.display = "";
+  studentSwitcher.innerHTML = "";
+
+  const label = document.createElement("span");
+  label.className = "parent-switcher-label";
+  label.textContent = "👨‍👩‍👧 Vedi i voti di:";
+  studentSwitcher.appendChild(label);
+
+  students.forEach((s) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "parent-switcher-btn";
+    btn.textContent = s.studentName || "Studente";
+    btn.dataset.studentId = s.studentId;
+    btn.addEventListener("click", () => selectParentStudent(s.studentId));
+    studentSwitcher.appendChild(btn);
+  });
+}
+
+/** Mostra i dati dello studente scelto (o dell'unico disponibile). */
+function selectParentStudent(studentId) {
+  const student = currentParentStudents.find((s) => s.studentId === studentId);
+  if (!student) return;
+
+  if (studentSwitcher) {
+    Array.from(studentSwitcher.querySelectorAll(".parent-switcher-btn")).forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.studentId === studentId);
+    });
+  }
+
+  renderStudentHeader({ studentName: student.studentName, className: student.className });
+  attachPublishedListener({ teacherUid: currentParentTeacherUid, studentId: student.studentId });
 }
 
 function renderStudentHeader(link) {

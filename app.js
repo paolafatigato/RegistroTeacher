@@ -229,6 +229,15 @@ let _archivedTestPickerBuilt = false;
 let _newTestClassesFieldBuilt = false;
 let parentAccountDialogContext = null;
 let parentsAccessManagerDialog = null; // riferimento alla modale "Gestisci accessi genitori"
+let parentPreviewDialog = null; // riferimento alla modale "Anteprima genitore"
+let parentsAccessToastTimer = null; // timer del piccolo avviso nella modale accessi genitori
+const PARENT_PREVIEW_DISPLAY_MODES = {
+  grade:  { label: "Voto" },
+  good:   { label: "🟢 Ottimo" },
+  mid:    { label: "🟡 OK" },
+  bad:    { label: "🔴 Da migliorare" },
+  hidden: { label: null },
+}; // usata dall'anteprima genitore (stessa logica di genitori.js)
 let parentsAccessCurrentAccounts = []; // { email, password, studentName } della classe aperta nella modale, per il tasto "Invia a tutti"
 // Stato di selezione multipla nella tabella voti (copia/incolla stile Excel)
 let selectionState = {
@@ -398,6 +407,7 @@ function init() {
   }
   initParentAccountDialog();
   initParentsAccessManager();
+  initParentPreviewDialog();
 
   if (configTestSelect) {
     configTestSelect.addEventListener("change", (event) => {
@@ -4745,6 +4755,17 @@ function renderParentsView() {
       ? `✅ Pubblicato il ${formatPublishDate(cfg.publishedAt)}`
       : "⚪ Non ancora pubblicato";
     head.appendChild(statusEl);
+
+    const publishOneBtn = document.createElement("button");
+    publishOneBtn.type = "button";
+    publishOneBtn.className = "btn btn-secondary btn-small parent-publish-one-btn";
+    publishOneBtn.textContent = cfg.published ? "📤 Ripubblica" : "📤 Pubblica";
+    publishOneBtn.title = cfg.published
+      ? `Aggiorna solo i dati di ${student.name || "questo alunno"} con le scelte attuali (voto, sezioni, commento)`
+      : `Pubblica solo i dati di ${student.name || "questo alunno"}, senza toccare gli altri compagni`;
+    publishOneBtn.addEventListener("click", () => publishParentForStudent(student, selectedClass, selectedTest));
+    head.appendChild(publishOneBtn);
+
     card.appendChild(head);
 
     // — Voto finale: SEMPRE visibile —
@@ -4853,6 +4874,66 @@ function renderParentsView() {
   }
 }
 
+/** Calcola lo snapshot "appiattito" (voto finale, sezioni secondo la
+ *  modalità scelta, griglia se attiva, commento) da scrivere sotto
+ *  /publishedGrades per UN alunno e UNA verifica. Usata sia dalla
+ *  pubblicazione di tutta la classe sia da quella di un singolo alunno,
+ *  così restano sempre coerenti tra loro. */
+function computeParentSnapshotForStudent(student, selectedClass, selectedTest, defaultVersion, facilitatedVersionId, now) {
+  const isFacilitated = student.facilitated === true;
+  const effectiveVersionId = isFacilitated && facilitatedVersionId
+    ? facilitatedVersionId
+    : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
+  const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
+  const cfg = ensureParentConfigStore(student, selectedTest.id);
+  const sectionsMode = cfg.sectionsMode;
+
+  // Se il genitore non deve vedere le sezioni, non pubblichiamo alcun dato di
+  // sezione (non solo "nascosto in UI": proprio assente dallo snapshot).
+  const sectionsOut = sectionsMode === "hidden"
+    ? []
+    : (version?.sections ?? []).map((section) => {
+        const rawScore = getSectionScore(student, selectedTest, section);
+        const rawMax = getSectionMax(section);
+        if (sectionsMode === "grade") {
+          return {
+            name: section.name || "Sezione",
+            mode: "grade",
+            score: formatScore(rawScore),
+            max: formatScore(rawMax),
+          };
+        }
+        // sectionsMode === "indicator": il livello si autogenera dalla sufficienza,
+        // non pubblichiamo il voto grezzo della sezione.
+        return {
+          name: section.name || "Sezione",
+          mode: computeIndicatorLevel(rawScore, rawMax),
+        };
+      });
+
+  // La Griglia di valutazione si pubblica solo se il docente l'ha attivata per
+  // questa verifica E se le sezioni non sono nascoste al genitore (altrimenti
+  // mostreremmo comunque un dettaglio di sezione che il docente ha scelto di
+  // non condividere). Ogni voce è "personale": il voto che lo studente ha
+  // effettivamente preso in quella colonna, con il giudizio corrispondente.
+  const rubricOut = (getTestParentsShowRubric(selectedTest) && sectionsMode !== "hidden")
+    ? buildParentRubricEntries(student, selectedTest, version)
+    : [];
+
+  return {
+    testId: selectedTest.id,
+    studentName: student.name || "",
+    className: selectedClass.name || "",
+    testTitle: selectedTest.title || "",
+    subject: selectedTest.subject || "",
+    finalScore: formatScore(getFinalScore(student, selectedTest, version)),
+    sections: sectionsOut,
+    rubric: rubricOut,
+    generalComment: cfg.generalComment || "",
+    publishedAt: now,
+  };
+}
+
 /** Pubblica lo stato attuale (voti/indicatori/commenti) per tutti gli studenti
  *  della classe selezionata, per la verifica selezionata. Scrive uno snapshot
  *  "appiattito" su /publishedGrades/{uid}/{testId}/{studentId}, che i genitori
@@ -4876,60 +4957,9 @@ function publishParentsForCurrentTest() {
   const updates = {};
 
   selectedClass.students.forEach((student) => {
-    const isFacilitated = student.facilitated === true;
-    const effectiveVersionId = isFacilitated && facilitatedVersionId
-      ? facilitatedVersionId
-      : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
-    const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
-    const cfg = ensureParentConfigStore(student, selectedTest.id);
-    const sectionsMode = cfg.sectionsMode;
-
-    // Se il genitore non deve vedere le sezioni, non pubblichiamo alcun dato di
-    // sezione (non solo "nascosto in UI": proprio assente dallo snapshot).
-    const sectionsOut = sectionsMode === "hidden"
-      ? []
-      : (version?.sections ?? []).map((section) => {
-          const rawScore = getSectionScore(student, selectedTest, section);
-          const rawMax = getSectionMax(section);
-          if (sectionsMode === "grade") {
-            return {
-              name: section.name || "Sezione",
-              mode: "grade",
-              score: formatScore(rawScore),
-              max: formatScore(rawMax),
-            };
-          }
-          // sectionsMode === "indicator": il livello si autogenera dalla sufficienza,
-          // non pubblichiamo il voto grezzo della sezione.
-          return {
-            name: section.name || "Sezione",
-            mode: computeIndicatorLevel(rawScore, rawMax),
-          };
-        });
-
-    // La Griglia di valutazione si pubblica solo se il docente l'ha attivata per
-    // questa verifica E se le sezioni non sono nascoste al genitore (altrimenti
-    // mostreremmo comunque un dettaglio di sezione che il docente ha scelto di
-    // non condividere). Ogni voce è "personale": il voto che lo studente ha
-    // effettivamente preso in quella colonna, con il giudizio corrispondente.
-    const rubricOut = (getTestParentsShowRubric(selectedTest) && sectionsMode !== "hidden")
-      ? buildParentRubricEntries(student, selectedTest, version)
-      : [];
-
-    const snapshot = {
-      testId: selectedTest.id,
-      studentName: student.name || "",
-      className: selectedClass.name || "",
-      testTitle: selectedTest.title || "",
-      subject: selectedTest.subject || "",
-      finalScore: formatScore(getFinalScore(student, selectedTest, version)),
-      sections: sectionsOut,
-      rubric: rubricOut,
-      generalComment: cfg.generalComment || "",
-      publishedAt: now,
-    };
-
+    const snapshot = computeParentSnapshotForStudent(student, selectedClass, selectedTest, defaultVersion, facilitatedVersionId, now);
     updates[`/publishedGrades/${fbUser.uid}/${student.id}/${selectedTest.id}`] = snapshot;
+    const cfg = ensureParentConfigStore(student, selectedTest.id);
     cfg.published = true;
     cfg.publishedAt = now;
   });
@@ -4944,6 +4974,40 @@ function publishParentsForCurrentTest() {
       alert("Errore durante la pubblicazione: " + err.message);
     });
 }
+
+/** Pubblica lo stato attuale SOLO per UN alunno, per la verifica
+ *  selezionata — senza toccare gli altri compagni di classe. Utile per
+ *  pubblicare man mano che finisci di correggere, invece di aspettare
+ *  di aver corretto tutti prima di premere "Pubblica" in blocco. */
+function publishParentForStudent(student, selectedClass, selectedTest) {
+  if (!fbDb || !fbUser) {
+    alert("Devi essere connesso con Google per pubblicare i dati per i genitori.");
+    return;
+  }
+  if (!student || !selectedClass || !selectedTest) return;
+
+  const defaultVersion = getDefaultVersion(selectedTest);
+  const facilitatedVersionId = getFacilitatedVersionId(selectedTest);
+  const now = Date.now();
+
+  const snapshot = computeParentSnapshotForStudent(student, selectedClass, selectedTest, defaultVersion, facilitatedVersionId, now);
+  const updates = {};
+  updates[`/publishedGrades/${fbUser.uid}/${student.id}/${selectedTest.id}`] = snapshot;
+
+  fbDb.ref().update(updates)
+    .then(() => {
+      const cfg = ensureParentConfigStore(student, selectedTest.id);
+      cfg.published = true;
+      cfg.publishedAt = now;
+      saveState();
+      renderParentsView();
+      setFirebaseStatus(`🟢 Dati di ${student.name} pubblicati per i genitori`);
+    })
+    .catch((err) => {
+      alert("Errore durante la pubblicazione: " + err.message);
+    });
+}
+
 
 // ── Accessi genitori (email + password) ──────────────────────────────
 // (parentAccountDialogContext è dichiarata in cima al file, prima di init())
@@ -4961,18 +5025,17 @@ function initParentAccountDialog() {
   });
   createBtn?.addEventListener("click", () => {
     const email = document.getElementById("parentAccountEmailInput").value.trim();
-    const password = document.getElementById("parentAccountPasswordInput").value;
     const errorEl = document.getElementById("parentAccountError");
     errorEl.style.display = "none";
-    if (!email || !password || password.length < 6) {
-      errorEl.textContent = "Inserisci un'email valida e una password di almeno 6 caratteri.";
+    if (!email) {
+      errorEl.textContent = "Inserisci un'email valida.";
       errorEl.style.display = "";
       return;
     }
     if (!parentAccountDialogContext) return;
     createBtn.disabled = true;
-    createParentAccount(email, password, parentAccountDialogContext.student, parentAccountDialogContext.classItem)
-      .then(() => {
+    createParentAccount(email, parentAccountDialogContext.student, parentAccountDialogContext.classItem)
+      .then(({ password }) => {
         createBtn.disabled = false;
         dialog.close();
         alert(`Accesso creato per ${parentAccountDialogContext.student.name}.\n\nComunica alla famiglia:\nEmail: ${email}\nPassword: ${password}\nPagina: genitori.html`);
@@ -5003,42 +5066,128 @@ function openParentAccountDialog(student, classItem) {
   document.getElementById("parentAccountDialog").showModal();
 }
 
-/** Crea un account Firebase (email+password) per un genitore usando una
- *  app Firebase "secondaria": così l'insegnante NON viene sloggato dalla
- *  propria sessione. Scrive poi il collegamento genitore → studente. */
-function createParentAccount(email, password, student, classItem) {
-  if (!fbUser) return Promise.reject(new Error("Devi essere connesso come insegnante."));
+/** Suggerisce un alias "+" (Gmail e molti altri provider lo supportano):
+ *  la posta arriva comunque nella casella reale, ma per Firebase è un
+ *  indirizzo diverso — utile quando l'email voluta è già in uso (es.
+ *  coincide con l'email Google dell'insegnante stessa). */
+function emailAliasSuggestion(email) {
+  const parts = String(email || "").split("@");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return "nome+prova@dominio.it";
+  return `${parts[0]}+prova@${parts[1]}`;
+}
 
-  let secondaryApp;
-  try {
-    secondaryApp = firebase.app("Secondary");
-  } catch (e) {
-    secondaryApp = firebase.initializeApp(FIREBASE_CONFIG, "Secondary");
+/** Converte un record /parentAccounts/{uid} nella forma { studentId: {...} },
+ *  gestendo sia il formato attuale (students: {...}) sia quello "legacy"
+ *  (un singolo studentId in cima al record, da prima di questo aggiornamento). */
+function normalizeStudentsMap(link) {
+  if (link && link.students && typeof link.students === "object") {
+    return Object.assign({}, link.students);
   }
-  const secondaryAuth = secondaryApp.auth();
+  if (link && link.studentId) {
+    return {
+      [link.studentId]: {
+        studentId: link.studentId,
+        studentName: link.studentName || "",
+        classId: link.classId || "",
+        className: link.className || "",
+      },
+    };
+  }
+  return {};
+}
 
-  return secondaryAuth.createUserWithEmailAndPassword(email, password)
-    .then((cred) => {
-      const parentUid = cred.user.uid;
-      const link = {
-        teacherUid: fbUser.uid,
-        studentId: student.id,
-        studentName: student.name || "",
-        classId: classItem?.id || "",
-        className: classItem?.name || "",
-        email,
-        // Salvata in chiaro (solo qui) per poterla mostrare/copiare/inviare
-        // di nuovo in un secondo momento: le regole del Realtime Database
-        // limitano la lettura di questo nodo al solo insegnante proprietario
-        // e al singolo genitore a cui appartiene, quindi non aumenta
-        // l'esposizione rispetto a chi già la conosceva.
-        password,
-        createdAt: Date.now(),
-      };
-      const updates = {};
-      updates[`/parentAccounts/${parentUid}`] = link;
-      updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = link;
-      return fbDb.ref().update(updates).finally(() => secondaryAuth.signOut());
+/** Collega un'email a uno studente. Se questo insegnante ha già creato un
+ *  accesso con la stessa email (es. il fratello/la sorella), NON crea un
+ *  secondo account Firebase (email univoca per forza) ma aggiunge lo
+ *  studente all'accesso già esistente, riusando la stessa password.
+ *  Altrimenti crea un nuovo account Firebase (email+password) usando una
+ *  app Firebase "secondaria", così l'insegnante non viene sloggata dalla
+ *  propria sessione. Risolve con { reused, password }. */
+function createParentAccount(email, student, classItem) {
+  if (!fbUser) return Promise.reject(new Error("Devi essere connesso come insegnante."));
+  const emailNorm = email.trim().toLowerCase();
+  if (!emailNorm) return Promise.reject(new Error("Inserisci un'email valida."));
+
+  return fbDb.ref(`/parentAccountsByTeacher/${fbUser.uid}`).once("value")
+    .then((snapshot) => {
+      const data = snapshot.val() || {};
+      const existingEntry = Object.entries(data)
+        .find(([, link]) => (link?.email || "").trim().toLowerCase() === emailNorm);
+
+      // ── Caso 1: l'email esiste già fra i TUOI accessi genitori: la
+      //    riusiamo, aggiungendo solo il nuovo studente (fratelli/sorelle). ──
+      if (existingEntry) {
+        const [parentUid, existingLink] = existingEntry;
+        const students = normalizeStudentsMap(existingLink);
+        if (students[student.id]) {
+          return Promise.reject(new Error(`"${email}" ha già accesso ai dati di ${student.name}.`));
+        }
+        students[student.id] = {
+          studentId: student.id,
+          studentName: student.name || "",
+          classId: classItem?.id || "",
+          className: classItem?.name || "",
+        };
+        const newLink = {
+          teacherUid: fbUser.uid,
+          email: existingLink.email,
+          password: existingLink.password || "",
+          createdAt: existingLink.createdAt || Date.now(),
+          students,
+        };
+        const updates = {};
+        updates[`/parentAccounts/${parentUid}`] = newLink;
+        updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = newLink;
+        return fbDb.ref().update(updates).then(() => ({ reused: true, password: newLink.password }));
+      }
+
+      // ── Caso 2: email nuova per te: crea un account Firebase a parte. ──
+      const password = generateRandomPassword();
+      let secondaryApp;
+      try {
+        secondaryApp = firebase.app("Secondary");
+      } catch (e) {
+        secondaryApp = firebase.initializeApp(FIREBASE_CONFIG, "Secondary");
+      }
+      const secondaryAuth = secondaryApp.auth();
+
+      return secondaryAuth.createUserWithEmailAndPassword(email, password)
+        .then((cred) => {
+          const parentUid = cred.user.uid;
+          const newLink = {
+            teacherUid: fbUser.uid,
+            email,
+            // Salvata in chiaro (solo qui) per poterla mostrare/copiare/inviare
+            // di nuovo in un secondo momento: le regole del Realtime Database
+            // limitano la lettura di questo nodo al solo insegnante proprietario
+            // e al singolo genitore a cui appartiene, quindi non aumenta
+            // l'esposizione rispetto a chi già la conosceva.
+            password,
+            createdAt: Date.now(),
+            students: {
+              [student.id]: {
+                studentId: student.id,
+                studentName: student.name || "",
+                classId: classItem?.id || "",
+                className: classItem?.name || "",
+              },
+            },
+          };
+          const updates = {};
+          updates[`/parentAccounts/${parentUid}`] = newLink;
+          updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = newLink;
+          return fbDb.ref().update(updates).finally(() => secondaryAuth.signOut());
+        })
+        .then(() => ({ reused: false, password }))
+        .catch((err) => {
+          if (err && err.code === "auth/email-already-in-use") {
+            throw new Error(
+              `"${email}" è già registrata su un altro account di questo sito (magari la tua email da insegnante, oppure un accesso creato per un'altra classe). ` +
+              `Prova con un indirizzo leggermente diverso, ad es. un alias "+": ${emailAliasSuggestion(email)} — la posta arriva comunque nella stessa casella.`
+            );
+          }
+          throw err;
+        });
     });
 }
 
@@ -5053,17 +5202,23 @@ function renderParentsAccountsList() {
         parentsAccountsList.innerHTML = `<p class="settings-hint">Nessun accesso genitore creato finora.</p>`;
         return;
       }
-      Object.values(data)
-        .sort((a, b) => (a.studentName || "").localeCompare(b.studentName || "", "it"))
-        .forEach((link) => {
-          const row = document.createElement("div");
-          row.className = "parent-account-item";
-          row.innerHTML =
-            `<strong>${escapeHtml(link.studentName)}</strong> ` +
-            `<span class="parent-account-class">${escapeHtml(link.className || "")}</span> — ` +
-            `<span class="parent-account-email">${escapeHtml(link.email)}</span>`;
-          parentsAccountsList.appendChild(row);
+      const rows = [];
+      Object.values(data).forEach((link) => {
+        const students = normalizeStudentsMap(link);
+        Object.values(students).forEach((s) => {
+          rows.push({ studentName: s.studentName, className: s.className, email: link.email });
         });
+      });
+      rows.sort((a, b) => (a.studentName || "").localeCompare(b.studentName || "", "it"));
+      rows.forEach((row) => {
+        const el = document.createElement("div");
+        el.className = "parent-account-item";
+        el.innerHTML =
+          `<strong>${escapeHtml(row.studentName)}</strong> ` +
+          `<span class="parent-account-class">${escapeHtml(row.className || "")}</span> — ` +
+          `<span class="parent-account-email">${escapeHtml(row.email)}</span>`;
+        parentsAccountsList.appendChild(el);
+      });
     })
     .catch((err) => {
       parentsAccountsList.innerHTML =
@@ -5110,13 +5265,14 @@ function initParentsAccessManager() {
     `<div class="parents-access-dialog-inner">` +
       `<h3>🔑 Accessi genitori</h3>` +
       `<p class="settings-hint" id="parentsAccessManagerSubtitle"></p>` +
+      `<p class="parents-access-toast" id="parentsAccessToast" style="display:none;"></p>` +
       `<div class="parents-access-table-wrap">` +
         `<table class="parents-access-table">` +
           `<thead><tr><th>Alunno</th><th>Email con accesso</th></tr></thead>` +
           `<tbody id="parentsAccessTableBody"></tbody>` +
         `</table>` +
       `</div>` +
-      `<p class="parents-access-mail-hint">✉️ "Invia a tutti" apre una bozza già pronta (email + password) nella tua posta per ciascun genitore: dovrai comunque premere Invia una volta per ciascuna — un sito statico non può spedire email al posto tuo.</p>` +
+      `<p class="parents-access-mail-hint">✉️ "Invia a tutti" apre una scheda Gmail già pronta (email + password) per ciascun genitore: dovrai comunque premere Invia una volta per ciascuna — un sito statico non può spedire email al posto tuo.</p>` +
       `<div class="parents-access-dialog-actions">` +
         `<button type="button" class="btn btn-secondary btn-small" id="parentsAccessSendAllBtn">✉️ Invia a tutti i genitori</button>` +
         `<button type="button" class="btn btn-secondary btn-small" id="parentsAccessManagerCloseBtn">Chiudi</button>` +
@@ -5165,12 +5321,15 @@ function renderParentsAccessTable(classItem) {
       const data = snapshot.val() || {};
       const byStudent = {};
       Object.entries(data).forEach(([parentUid, link]) => {
-        if (!link || !link.studentId) return;
-        if (!byStudent[link.studentId]) byStudent[link.studentId] = [];
-        byStudent[link.studentId].push({
-          parentUid,
-          email: link.email || "",
-          password: link.password || "", // assente per gli accessi creati prima di questo aggiornamento
+        if (!link) return;
+        const linkedStudents = normalizeStudentsMap(link);
+        Object.keys(linkedStudents).forEach((studentId) => {
+          if (!byStudent[studentId]) byStudent[studentId] = [];
+          byStudent[studentId].push({
+            parentUid,
+            email: link.email || "",
+            password: link.password || "", // assente per gli accessi creati prima di questo aggiornamento
+          });
         });
       });
 
@@ -5199,8 +5358,13 @@ function renderParentsAccessTable(classItem) {
     });
 }
 
-/** Costruisce il link mailto: personalizzato (destinatario, oggetto,
- *  corpo con link al portale e credenziali) per un singolo genitore. */
+/** Costruisce il link per aprire una bozza già pronta (destinatario,
+ *  oggetto, corpo con link al portale e credenziali) per un singolo
+ *  genitore. Usa il "compose" web di Gmail invece di mailto:, perché
+ *  mailto: chiede al sistema operativo quale app di posta usare — e se
+ *  usi Gmail da browser (senza un client di posta installato), Gmail
+ *  spesso non compare nemmeno tra le opzioni. Il link Gmail apre invece
+ *  direttamente una nuova scheda del browser, già pronta per l'invio. */
 function buildParentMailto(email, password, studentName) {
   const subject = `Accesso al Registro voti di ${studentName}`;
   const body =
@@ -5213,28 +5377,42 @@ Email di accesso: ${email}
 Password: ${password}
 
 Un saluto.`;
-  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-/** Apre una bozza di posta pre-compilata per OGNI genitore con password
- *  salvata nella classe corrente, una dopo l'altra. Il browser apre il
- *  client di posta predefinito: l'invio vero e proprio resta manuale. */
+/** Apre una bozza pre-compilata su Gmail per OGNI genitore con password
+ *  salvata nella classe corrente, una scheda del browser per volta.
+ *  L'invio vero e proprio resta manuale: un sito statico non può
+ *  spedire email al posto tuo. */
 function sendAllParentsEmails() {
   const accounts = parentsAccessCurrentAccounts;
   if (!accounts || accounts.length === 0) {
     alert("Nessun accesso con password salvata da comunicare in questa classe. Aggiungine uno dalla tabella qui sopra.");
     return;
   }
-  if (!confirm(`Verranno aperte ${accounts.length} bozze email (una per genitore) nel tuo programma di posta. Continuare?`)) {
+  if (!confirm(`Verranno aperte ${accounts.length} bozze su Gmail (una scheda per genitore). Continuare?`)) {
     return;
   }
   accounts.forEach(({ email, password, studentName }) => {
-    window.open(buildParentMailto(email, password, studentName), "_blank");
+    window.open(buildParentMailto(email, password, studentName), "_blank", "noopener,noreferrer");
   });
 }
 
 /** Copia un testo negli appunti mostrando un breve feedback sul bottone
  *  che ha innescato la copia. */
+// (parentsAccessToastTimer è dichiarata in cima al file, prima di init())
+
+/** Mostra un breve avviso non bloccante in cima alla modale accessi
+ *  genitori (es. quando un'email viene riusata per un fratello/sorella). */
+function showParentsAccessToast(message) {
+  const toast = document.getElementById("parentsAccessToast");
+  if (!toast) return;
+  toast.textContent = "ℹ️ " + message;
+  toast.style.display = "";
+  clearTimeout(parentsAccessToastTimer);
+  parentsAccessToastTimer = setTimeout(() => { toast.style.display = "none"; }, 5000);
+}
+
 function copyTextToClipboard(text, triggerBtn) {
   const done = () => {
     if (!triggerBtn) return;
@@ -5259,7 +5437,16 @@ function buildParentsAccessRow(student, classItem, accounts) {
 
   const nameCell = document.createElement("td");
   nameCell.className = "parents-access-name-cell";
-  nameCell.textContent = student.name || "";
+  const nameLabel = document.createElement("span");
+  nameLabel.textContent = student.name || "";
+  nameCell.appendChild(nameLabel);
+  const previewBtn = document.createElement("button");
+  previewBtn.type = "button";
+  previewBtn.className = "parents-access-icon-btn parents-access-preview-btn";
+  previewBtn.title = "Anteprima: cosa vede il genitore";
+  previewBtn.textContent = "👁️";
+  previewBtn.addEventListener("click", () => openParentPreview(student, classItem));
+  nameCell.appendChild(previewBtn);
   tr.appendChild(nameCell);
 
   const emailCell = document.createElement("td");
@@ -5298,9 +5485,11 @@ function buildParentsAccessRow(student, classItem, accounts) {
 
         const mailBtn = document.createElement("a");
         mailBtn.className = "parents-access-icon-btn";
-        mailBtn.title = "Invia email a questo genitore";
+        mailBtn.title = "Apri una bozza Gmail per questo genitore";
         mailBtn.textContent = "✉️";
         mailBtn.href = buildParentMailto(email, password, student.name || "");
+        mailBtn.target = "_blank";
+        mailBtn.rel = "noopener noreferrer";
         item.appendChild(mailBtn);
       } else {
         const noPw = document.createElement("span");
@@ -5344,13 +5533,18 @@ function buildParentsAccessRow(student, classItem, accounts) {
       addError.style.display = "";
       return;
     }
-    const password = generateRandomPassword();
     addBtn.disabled = true;
     addInput.disabled = true;
-    createParentAccount(email, password, student, classItem)
-      .then(() => {
+    createParentAccount(email, student, classItem)
+      .then(({ reused }) => {
+        addInput.value = "";
         renderParentsAccessTable(classItem);
         renderParentsAccountsList();
+        if (reused) {
+          // L'email esisteva già (es. un fratello/una sorella): lo segnaliamo
+          // brevemente, dato che non è stata generata una password nuova.
+          showParentsAccessToast(`"${email}" ha ora accesso anche ai dati di ${student.name}, con la stessa password di prima.`);
+        }
       })
       .catch((err) => {
         addBtn.disabled = false;
@@ -5369,24 +5563,253 @@ function buildParentsAccessRow(student, classItem, accounts) {
   return tr;
 }
 
-/** Rimuove il collegamento genitore→studente. L'account Firebase (email +
- *  password) resta tecnicamente attivo, ma senza il collegamento
- *  genitori.html non mostra più alcun dato: la revoca è quindi efficace
- *  dal punto di vista dell'accesso ai voti. */
+/** Rimuove il collegamento genitore→studente per QUESTO studente. Se
+ *  l'accesso era condiviso con altri fratelli/sorelle, l'account resta
+ *  attivo per loro; viene eliminato del tutto solo se era l'ultimo
+ *  studente collegato. L'account Firebase (email+password) in sé resta
+ *  tecnicamente attivo, ma senza collegamento genitori.html non mostra
+ *  più alcun dato: la revoca è quindi efficace ai fini pratici. */
 function revokeParentAccess(parentUid, email, student, classItem) {
   if (!confirm(`Revocare l'accesso di "${email}" ai dati di ${student.name}?`)) return;
-  const updates = {};
-  updates[`/parentAccounts/${parentUid}`] = null;
-  updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = null;
-  fbDb.ref().update(updates)
+  fbDb.ref(`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`).once("value")
+    .then((snapshot) => {
+      const link = snapshot.val();
+      const updates = {};
+      if (!link) {
+        return Promise.resolve();
+      }
+      const students = normalizeStudentsMap(link);
+      delete students[student.id];
+      const remainingIds = Object.keys(students);
+      if (remainingIds.length === 0) {
+        updates[`/parentAccounts/${parentUid}`] = null;
+        updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = null;
+      } else {
+        const newLink = {
+          teacherUid: fbUser.uid,
+          email: link.email,
+          password: link.password || "",
+          createdAt: link.createdAt || Date.now(),
+          students,
+        };
+        updates[`/parentAccounts/${parentUid}`] = newLink;
+        updates[`/parentAccountsByTeacher/${fbUser.uid}/${parentUid}`] = newLink;
+      }
+      return fbDb.ref().update(updates);
+    })
     .then(() => {
       renderParentsAccessTable(classItem);
       renderParentsAccountsList();
     })
     .catch((err) => {
       alert("Errore durante la revoca: " + err.message);
-
     });
+}
+
+// ── Anteprima genitore: "vedi cosa vede il genitore", con l'accesso da
+// insegnante (nessun login come genitore necessario). Legge esattamente
+// lo stesso nodo (/publishedGrades) e usa la stessa presentazione a
+// schede di genitori.html/genitori.js, riprodotta qui in JS puro perché
+// le due pagine non condividono script.
+// (parentPreviewDialog è dichiarata in cima al file, prima di init())
+
+// (PARENT_PREVIEW_DISPLAY_MODES è dichiarata in cima al file, prima di init())
+
+/** Crea (una sola volta) la modale di anteprima genitore. */
+function initParentPreviewDialog() {
+  if (document.getElementById("parentPreviewDialog")) return;
+
+  const dialog = document.createElement("dialog");
+  dialog.id = "parentPreviewDialog";
+  dialog.innerHTML =
+    `<div class="parent-preview-dialog-inner">` +
+      `<h3>👁️ Anteprima genitore</h3>` +
+      `<p class="settings-hint" id="parentPreviewSubtitle"></p>` +
+      `<div class="parent-preview-body" id="parentPreviewBody"></div>` +
+      `<div class="parents-access-dialog-actions">` +
+        `<button type="button" class="btn btn-secondary btn-small" id="parentPreviewCloseBtn">Chiudi</button>` +
+      `</div>` +
+    `</div>`;
+  document.body.appendChild(dialog);
+  parentPreviewDialog = dialog;
+
+  dialog.querySelector("#parentPreviewCloseBtn").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close(); // click sullo sfondo
+  });
+}
+
+/** Apre l'anteprima per uno studente: legge /publishedGrades con la
+ *  sessione dell'insegnante (già autorizzata dalle regole del database)
+ *  e la mostra con lo stesso layout che vede il genitore su genitori.html.
+ *  Mostra solo ciò che è già stato pubblicato, non un'anteprima di
+ *  modifiche non ancora salvate con "Pubblica". */
+function openParentPreview(student, classItem) {
+  if (!fbDb || !fbUser) {
+    alert("Devi essere connesso con Google per vedere l'anteprima.");
+    return;
+  }
+  if (!parentPreviewDialog) return;
+
+  const subtitle = document.getElementById("parentPreviewSubtitle");
+  if (subtitle) {
+    subtitle.textContent =
+      `${student.name || ""} — classe ${classItem?.name || ""} · esattamente ciò che un genitore collegato vede oggi (solo le verifiche già pubblicate).`;
+  }
+  const body = document.getElementById("parentPreviewBody");
+  if (body) body.innerHTML = `<p class="parents-access-loading">Caricamento…</p>`;
+  parentPreviewDialog.showModal();
+
+  fbDb.ref(`/publishedGrades/${fbUser.uid}/${student.id}`).once("value")
+    .then((snapshot) => {
+      renderParentPreviewTests(snapshot.val());
+    })
+    .catch((err) => {
+      if (body) {
+        body.innerHTML = `<p class="parent-preview-empty">Impossibile caricare l'anteprima (${escapeHtml(err.message)}).</p>`;
+      }
+    });
+}
+
+function renderParentPreviewTests(data) {
+  const body = document.getElementById("parentPreviewBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  const tests = data ? Object.values(data) : [];
+  if (tests.length === 0) {
+    body.innerHTML = `<p class="parent-preview-empty">Non ci sono ancora verifiche pubblicate per questo alunno: un genitore vedrebbe una schermata vuota.</p>`;
+    return;
+  }
+
+  tests
+    .sort((a, b) => (b.publishedAt || 0) - (a.publishedAt || 0))
+    .forEach((test) => body.appendChild(buildParentPreviewTestCard(test)));
+}
+
+/** Ricostruisce la stessa scheda-verifica che genitori.js mostra a un
+ *  genitore, a partire dallo stesso snapshot pubblicato. */
+function buildParentPreviewTestCard(test) {
+  const card = document.createElement("article");
+  card.className = "parent-test-card";
+
+  const head = document.createElement("div");
+  head.className = "parent-test-head";
+  const title = document.createElement("h3");
+  title.textContent = test.testTitle || "Verifica";
+  head.appendChild(title);
+  if (test.subject) {
+    const subject = document.createElement("span");
+    subject.className = "parent-test-subject";
+    subject.textContent = test.subject;
+    head.appendChild(subject);
+  }
+  card.appendChild(head);
+
+  if (test.finalScore !== null && test.finalScore !== undefined && test.finalScore !== "") {
+    const finalWrap = document.createElement("div");
+    finalWrap.className = "parent-final-score";
+    finalWrap.innerHTML =
+      `<span class="parent-final-score-label">Voto finale</span>` +
+      `<span class="parent-final-score-value">${escapeHtml(String(test.finalScore))}</span>`;
+    card.appendChild(finalWrap);
+  }
+
+  const sections = Array.isArray(test.sections) ? test.sections : Object.values(test.sections || {});
+  const visibleSections = sections.filter((s) => s && s.mode !== "hidden");
+  if (visibleSections.length > 0) {
+    const sectionsWrap = document.createElement("div");
+    sectionsWrap.className = "parent-test-sections";
+    visibleSections.forEach((section) => {
+      const row = document.createElement("div");
+      row.className = "parent-test-section-row mode-" + section.mode;
+      const label = document.createElement("span");
+      label.className = "parent-test-section-label";
+      label.textContent = section.name || "Sezione";
+      row.appendChild(label);
+
+      const value = document.createElement("span");
+      value.className = "parent-test-section-value";
+      if (section.mode === "grade") {
+        value.textContent = `${formatMaybeNumberPreview(section.score)} / ${formatMaybeNumberPreview(section.max)}`;
+      } else {
+        value.textContent = PARENT_PREVIEW_DISPLAY_MODES[section.mode]?.label || "";
+      }
+      row.appendChild(value);
+
+      sectionsWrap.appendChild(row);
+    });
+    card.appendChild(sectionsWrap);
+  }
+
+  const rubricEntries = Array.isArray(test.rubric) ? test.rubric : Object.values(test.rubric || {});
+  if (rubricEntries.length > 0) {
+    const rubricWrap = document.createElement("div");
+    rubricWrap.className = "parent-test-rubric";
+    const rubricTitle = document.createElement("h4");
+    rubricTitle.className = "parent-test-rubric-title";
+    rubricTitle.textContent = "📐 Griglia di valutazione";
+    rubricWrap.appendChild(rubricTitle);
+
+    rubricEntries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "parent-rubric-row";
+
+      const rowHead = document.createElement("div");
+      rowHead.className = "parent-rubric-row-head";
+      const label = document.createElement("span");
+      label.className = "parent-rubric-row-label";
+      label.textContent = entry.section ? `${entry.section} — ${entry.name || "Voce"}` : (entry.name || "Voce");
+      rowHead.appendChild(label);
+      const score = document.createElement("span");
+      score.className = "parent-rubric-row-score";
+      score.textContent = `${formatMaybeNumberPreview(entry.score)} / ${formatMaybeNumberPreview(entry.max)}`;
+      rowHead.appendChild(score);
+      row.appendChild(rowHead);
+
+      if (entry.judgment) {
+        const judgment = document.createElement("p");
+        judgment.className = "parent-rubric-row-judgment";
+        judgment.textContent = entry.judgment;
+        row.appendChild(judgment);
+      }
+
+      rubricWrap.appendChild(row);
+    });
+
+    card.appendChild(rubricWrap);
+  }
+
+  if (test.generalComment) {
+    const commentBox = document.createElement("div");
+    commentBox.className = "parent-test-comment";
+    commentBox.textContent = test.generalComment;
+    card.appendChild(commentBox);
+  }
+
+  if (test.publishedAt) {
+    const dateEl = document.createElement("div");
+    dateEl.className = "parent-test-date";
+    dateEl.textContent = "Pubblicato il " + formatParentPreviewDate(test.publishedAt);
+    card.appendChild(dateEl);
+  }
+
+  return card;
+}
+
+function formatMaybeNumberPreview(value) {
+  if (value === null || value === undefined || value === "") return "–";
+  return value;
+}
+
+function formatParentPreviewDate(timestamp) {
+  try {
+    return new Date(timestamp).toLocaleString("it-IT", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch (e) {
+    return "";
+  }
 }
 
 function escapeHtml(str) {
