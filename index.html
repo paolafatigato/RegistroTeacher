@@ -18,7 +18,6 @@
           <button id="navEvaluationBtn" class="btn btn-secondary">Valutazione</button>
           <button id="navParentsBtn" class="btn btn-secondary">👨‍👩‍👧 Genitori</button>
           <!-- <button id="navConfigBtn" class="btn btn-secondary">Configurazione</button> -->
-          <button id="resetBtn" class="btn btn-danger">Reset</button>
           <a href="https://paolafatigato.github.io/Class-Manager/" target="_blank" rel="noopener" id="backToClassroomManagerBtn" class="btn btn-classroom " style="text-decoration:none;display:inline-block;">ClassroomManager</a>
           <!-- Firebase Auth Button -->
           <div id="firebaseAuthArea" style="display:flex;align-items:center;gap:10px;">
@@ -321,30 +320,6 @@
         <button id="commentCancelBtn" class="btn btn-secondary">Annulla</button>
         <button id="commentDeleteBtn" class="btn btn-danger">Elimina</button>
         <button id="commentSaveBtn" class="btn btn-primary">Salva</button>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- Dialog griglia di valutazione per singolo studente -->
-  <dialog id="studentRubricDialog">
-    <div class="student-rubric-dialog-inner">
-      <div class="student-rubric-dialog-header">
-        <h3 id="studentRubricTitle">📐 Griglia di valutazione</h3>
-        <button id="studentRubricPrintBtn" class="btn btn-secondary">🖨️ Stampa griglia</button>
-      </div>
-      <p class="student-rubric-hint">
-        💡 Per ogni sottosezione ci sono due colonne: quella col nome della sottosezione è il giudizio
-        condiviso (si modifica in "📐 Griglia"), quella col nome dello studente è specifica per lui/lei.
-        La cella evidenziata è il voto già assegnato in "Valutazione".
-      </p>
-      <div id="studentRubricPrintArea">
-        <h3 id="studentRubricPrintTitle" class="rubric-print-title"></h3>
-        <div id="studentRubricTableWrapper" class="table-wrapper">
-          <table id="studentRubricTable" class="grade-table rubric-table student-rubric-table"></table>
-        </div>
-      </div>
-      <div class="student-rubric-dialog-actions">
-        <button id="studentRubricCloseBtn" class="btn btn-primary">Chiudi</button>
       </div>
     </div>
   </dialog>
