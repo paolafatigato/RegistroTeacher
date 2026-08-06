@@ -2507,35 +2507,76 @@ h1, h2, h3 {
   color: var(--docente-600);
 }
 
-.parent-rubric-row {
-  background: var(--white);
+.parent-rubric-table-wrap {
+  overflow-x: auto;
   border-radius: 8px;
-  padding: 7px 10px;
+  background: var(--white);
 }
 
-.parent-rubric-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
+.parent-rubric-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
 }
 
-.parent-rubric-row-label {
-  font-weight: 600;
-}
-
-.parent-rubric-row-score {
-  font-weight: 700;
-  color: var(--sonno-600);
+.parent-rubric-table th,
+.parent-rubric-table td {
+  border: 1px solid #eee;
+  padding: 5px 8px;
+  text-align: center;
   white-space: nowrap;
 }
 
-.parent-rubric-row-judgment {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: #5a5a5a;
-  font-style: italic;
+.parent-rubric-table thead tr:first-child th {
+  background: var(--glaucous);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.parent-rubric-subheader {
+  background: #f3f5fb;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.parent-rubric-max-badge {
+  color: #888;
+  font-weight: 400;
+  font-size: 10.5px;
+}
+
+.parent-rubric-vote-col {
+  background: var(--glaucous);
+  color: var(--white);
+}
+
+.parent-rubric-vote-cell {
+  font-weight: 700;
+  background: #f7f7f7;
+  color: #555;
+}
+
+.parent-rubric-cell {
+  color: #333;
+  font-size: 11.5px;
+  white-space: normal;
+  max-width: 140px;
+}
+
+.parent-rubric-cell-disabled {
+  background: repeating-linear-gradient(45deg, #f5f5f5, #f5f5f5 4px, #ececec 4px, #ececec 8px);
+  color: #bbb;
+}
+
+.parent-rubric-cell-achieved {
+  background: var(--zaino-100);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--sonno-600);
+}
+
+.parent-rubric-table .section-divider {
+  border-right: 2px solid var(--docente-100);
 }
 
 .parent-test-date {

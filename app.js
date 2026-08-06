@@ -4598,32 +4598,57 @@ function buildAutoParentComment(student, testId) {
   return [commentsText, rubricText].filter(Boolean).join("\n");
 }
 
-/** Costruisce la versione "personale" della Griglia di valutazione da pubblicare
- *  per i genitori: una voce per ogni sottosezione con un voto assegnato, col
- *  voto stesso e il giudizio scritto in griglia per quel voto (se c'è). Usata
- *  solo quando il docente ha attivato "Griglia visibile ai genitori" per la
- *  verifica corrente. */
-function buildParentRubricEntries(student, test, version) {
-  const entries = [];
-  (version?.sections ?? []).forEach((section) => {
-    const sectionScores = student.scores?.[test.id]?.[section.id];
-    if (!sectionScores?.subsections) return;
+/** Costruisce l'INTERA Griglia di valutazione da pubblicare per i genitori:
+ *  stessa tabella che vede il docente (tutte le sezioni, tutte le
+ *  sottosezioni, tutti i voti possibili da 0 al massimo), ma già "cotta"
+ *  in dati semplici — sola lettura, senza formule né riferimenti allo
+ *  stato interno. Per ogni sottosezione include anche il voto ottenuto
+ *  da QUESTO studente, così il genitore può vedere quale riga corrisponde
+ *  al proprio figlio. I giudizi mai scritti dal docente restano assenti
+ *  dalla mappa (celle vuote, mai un placeholder). Usata solo quando il
+ *  docente ha attivato "Griglia visibile ai genitori" per la verifica
+ *  corrente. Torna null se non c'è nessuna colonna con un massimo > 0. */
+function buildParentRubricGrid(student, test, version) {
+  const sections = version?.sections ?? [];
+  if (sections.length === 0) return null;
+
+  let globalMaxRow = 0;
+  sections.forEach((section) => {
+    const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
     (section.subsections ?? []).forEach((sub) => {
-      const rawScore = sectionScores.subsections[sub.id];
-      const score = parseNumber(rawScore);
-      if (score === null || score === undefined) return;
-      const max = getSubsectionMax(section, sub, getSectionTotals(section).fallbackPerSubMax);
-      const judgment = (sub.rubric && typeof sub.rubric === "object") ? (sub.rubric[score] || "") : "";
-      entries.push({
-        section: section.name || "Sezione",
-        name: sub.name || "Sub",
-        score: formatScore(score),
-        max: formatScore(max),
-        judgment,
-      });
+      const max = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+      globalMaxRow = Math.max(globalMaxRow, Math.ceil(max));
     });
   });
-  return entries;
+  if (globalMaxRow <= 0) return null;
+
+  const outSections = sections
+    .filter((section) => (section.subsections ?? []).length > 0)
+    .map((section) => {
+      const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+      const sectionScores = student.scores?.[test.id]?.[section.id];
+      const outSubsections = (section.subsections ?? []).map((sub) => {
+        const max = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
+        const rawScore = sectionScores?.subsections?.[sub.id];
+        const studentScore = parseNumber(rawScore);
+        const judgments = {};
+        if (sub.rubric && typeof sub.rubric === "object") {
+          Object.entries(sub.rubric).forEach(([rowScore, text]) => {
+            if (text && String(text).trim()) judgments[rowScore] = text;
+          });
+        }
+        return {
+          name: sub.name || "Sub",
+          max: formatScore(max),
+          studentScore: (studentScore === null || studentScore === undefined) ? null : studentScore,
+          judgments,
+        };
+      });
+      return { name: section.name || "Sezione", subsections: outSubsections };
+    });
+
+  if (outSections.length === 0) return null;
+  return { maxRow: globalMaxRow, sections: outSections };
 }
 
 function formatPublishDate(timestamp) {
@@ -4914,11 +4939,12 @@ function computeParentSnapshotForStudent(student, selectedClass, selectedTest, d
   // La Griglia di valutazione si pubblica solo se il docente l'ha attivata per
   // questa verifica E se le sezioni non sono nascoste al genitore (altrimenti
   // mostreremmo comunque un dettaglio di sezione che il docente ha scelto di
-  // non condividere). Ogni voce è "personale": il voto che lo studente ha
-  // effettivamente preso in quella colonna, con il giudizio corrispondente.
+  // non condividere). Pubblichiamo l'INTERA griglia (tutte le righe, sola
+  // lettura), non solo la riga del voto ottenuto: il genitore vede la stessa
+  // tabella del docente, con evidenziato il voto del proprio figlio.
   const rubricOut = (getTestParentsShowRubric(selectedTest) && sectionsMode !== "hidden")
-    ? buildParentRubricEntries(student, selectedTest, version)
-    : [];
+    ? buildParentRubricGrid(student, selectedTest, version)
+    : null;
 
   return {
     testId: selectedTest.id,
@@ -5742,42 +5768,8 @@ function buildParentPreviewTestCard(test) {
     card.appendChild(sectionsWrap);
   }
 
-  const rubricEntries = Array.isArray(test.rubric) ? test.rubric : Object.values(test.rubric || {});
-  if (rubricEntries.length > 0) {
-    const rubricWrap = document.createElement("div");
-    rubricWrap.className = "parent-test-rubric";
-    const rubricTitle = document.createElement("h4");
-    rubricTitle.className = "parent-test-rubric-title";
-    rubricTitle.textContent = "📐 Griglia di valutazione";
-    rubricWrap.appendChild(rubricTitle);
-
-    rubricEntries.forEach((entry) => {
-      const row = document.createElement("div");
-      row.className = "parent-rubric-row";
-
-      const rowHead = document.createElement("div");
-      rowHead.className = "parent-rubric-row-head";
-      const label = document.createElement("span");
-      label.className = "parent-rubric-row-label";
-      label.textContent = entry.section ? `${entry.section} — ${entry.name || "Voce"}` : (entry.name || "Voce");
-      rowHead.appendChild(label);
-      const score = document.createElement("span");
-      score.className = "parent-rubric-row-score";
-      score.textContent = `${formatMaybeNumberPreview(entry.score)} / ${formatMaybeNumberPreview(entry.max)}`;
-      rowHead.appendChild(score);
-      row.appendChild(rowHead);
-
-      if (entry.judgment) {
-        const judgment = document.createElement("p");
-        judgment.className = "parent-rubric-row-judgment";
-        judgment.textContent = entry.judgment;
-        row.appendChild(judgment);
-      }
-
-      rubricWrap.appendChild(row);
-    });
-
-    card.appendChild(rubricWrap);
+  if (test.rubric && Array.isArray(test.rubric.sections) && test.rubric.sections.length > 0) {
+    card.appendChild(buildParentRubricTable(test.rubric));
   }
 
   if (test.generalComment) {
@@ -5795,6 +5787,95 @@ function buildParentPreviewTestCard(test) {
   }
 
   return card;
+}
+
+/** Ricostruisce, in sola lettura, l'INTERA Griglia di valutazione così
+ *  come l'ha vista scrivere il docente: stesse sezioni/sottosezioni,
+ *  stesse righe di voto (0..max), stessi giudizi — ma senza input
+ *  modificabili e senza placeholder "Giudizio…" nelle celle vuote (le
+ *  celle senza giudizio scritto restano semplicemente vuote). La cella
+ *  corrispondente al voto ottenuto dallo studente in quella colonna è
+ *  evidenziata. Usata sia dall'anteprima del docente (app.js) sia dalla
+ *  pagina genitori.html (dove esiste una copia identica di questa
+ *  funzione, perché le due pagine non condividono script). */
+function buildParentRubricTable(rubric) {
+  const wrap = document.createElement("div");
+  wrap.className = "parent-test-rubric";
+  const title = document.createElement("h4");
+  title.className = "parent-test-rubric-title";
+  title.textContent = "📐 Griglia di valutazione";
+  wrap.appendChild(title);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "parent-rubric-table-wrap";
+  const table = document.createElement("table");
+  table.className = "parent-rubric-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const subHeaderRow = document.createElement("tr");
+
+  const voteTh = document.createElement("th");
+  voteTh.textContent = "Voto";
+  voteTh.rowSpan = 2;
+  voteTh.className = "parent-rubric-vote-col";
+  headerRow.appendChild(voteTh);
+
+  rubric.sections.forEach((section) => {
+    const sectionTh = document.createElement("th");
+    sectionTh.colSpan = section.subsections.length;
+    sectionTh.textContent = section.name || "Sezione";
+    headerRow.appendChild(sectionTh);
+
+    section.subsections.forEach((sub, idx) => {
+      const isLast = idx === section.subsections.length - 1;
+      const subTh = document.createElement("th");
+      subTh.className = "parent-rubric-subheader" + (isLast ? " section-divider" : "");
+      subTh.innerHTML =
+        `${escapeHtml(sub.name || "Sub")} <span class="parent-rubric-max-badge">/${escapeHtml(String(sub.max))}</span>`;
+      subHeaderRow.appendChild(subTh);
+    });
+  });
+  thead.appendChild(headerRow);
+  thead.appendChild(subHeaderRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (let voteValue = 0; voteValue <= rubric.maxRow; voteValue++) {
+    const row = document.createElement("tr");
+    const voteTd = document.createElement("td");
+    voteTd.className = "parent-rubric-vote-cell";
+    voteTd.textContent = voteValue;
+    row.appendChild(voteTd);
+
+    rubric.sections.forEach((section) => {
+      section.subsections.forEach((sub, idx) => {
+        const isLast = idx === section.subsections.length - 1;
+        const td = document.createElement("td");
+        td.className = "parent-rubric-cell" + (isLast ? " section-divider" : "");
+        const subMaxNum = Number(sub.max);
+
+        if (voteValue > subMaxNum) {
+          td.classList.add("parent-rubric-cell-disabled");
+          td.textContent = "—";
+        } else {
+          // Nessun placeholder: cella vuota se il docente non ha scritto nulla per questo voto.
+          td.textContent = (sub.judgments && sub.judgments[String(voteValue)]) || "";
+          if (sub.studentScore !== null && sub.studentScore !== undefined && Number(sub.studentScore) === voteValue) {
+            td.classList.add("parent-rubric-cell-achieved");
+            td.title = "Il voto ottenuto in questa colonna";
+          }
+        }
+        row.appendChild(td);
+      });
+    });
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
 }
 
 function formatMaybeNumberPreview(value) {

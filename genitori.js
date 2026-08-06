@@ -316,42 +316,8 @@ function buildTestCard(test) {
     card.appendChild(sectionsWrap);
   }
 
-  const rubricEntries = Array.isArray(test.rubric) ? test.rubric : Object.values(test.rubric || {});
-  if (rubricEntries.length > 0) {
-    const rubricWrap = document.createElement("div");
-    rubricWrap.className = "parent-test-rubric";
-    const rubricTitle = document.createElement("h4");
-    rubricTitle.className = "parent-test-rubric-title";
-    rubricTitle.textContent = "📐 Griglia di valutazione";
-    rubricWrap.appendChild(rubricTitle);
-
-    rubricEntries.forEach((entry) => {
-      const row = document.createElement("div");
-      row.className = "parent-rubric-row";
-
-      const head = document.createElement("div");
-      head.className = "parent-rubric-row-head";
-      const label = document.createElement("span");
-      label.className = "parent-rubric-row-label";
-      label.textContent = entry.section ? `${entry.section} — ${entry.name || "Voce"}` : (entry.name || "Voce");
-      head.appendChild(label);
-      const score = document.createElement("span");
-      score.className = "parent-rubric-row-score";
-      score.textContent = `${formatMaybeNumber(entry.score)} / ${formatMaybeNumber(entry.max)}`;
-      head.appendChild(score);
-      row.appendChild(head);
-
-      if (entry.judgment) {
-        const judgment = document.createElement("p");
-        judgment.className = "parent-rubric-row-judgment";
-        judgment.textContent = entry.judgment;
-        row.appendChild(judgment);
-      }
-
-      rubricWrap.appendChild(row);
-    });
-
-    card.appendChild(rubricWrap);
+  if (test.rubric && Array.isArray(test.rubric.sections) && test.rubric.sections.length > 0) {
+    card.appendChild(buildParentRubricTable(test.rubric));
   }
 
   if (test.generalComment) {
@@ -369,6 +335,94 @@ function buildTestCard(test) {
   }
 
   return card;
+}
+
+/** Ricostruisce, in sola lettura, l'INTERA Griglia di valutazione così
+ *  come l'ha vista scrivere il docente: stesse sezioni/sottosezioni,
+ *  stesse righe di voto (0..max), stessi giudizi — ma senza input
+ *  modificabili e senza placeholder "Giudizio…" nelle celle vuote (le
+ *  celle senza giudizio scritto restano semplicemente vuote). La cella
+ *  corrispondente al voto ottenuto dallo studente in quella colonna è
+ *  evidenziata. Copia identica della funzione in app.js (anteprima del
+ *  docente): le due pagine non condividono script. */
+function buildParentRubricTable(rubric) {
+  const wrap = document.createElement("div");
+  wrap.className = "parent-test-rubric";
+  const title = document.createElement("h4");
+  title.className = "parent-test-rubric-title";
+  title.textContent = "📐 Griglia di valutazione";
+  wrap.appendChild(title);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "parent-rubric-table-wrap";
+  const table = document.createElement("table");
+  table.className = "parent-rubric-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const subHeaderRow = document.createElement("tr");
+
+  const voteTh = document.createElement("th");
+  voteTh.textContent = "Voto";
+  voteTh.rowSpan = 2;
+  voteTh.className = "parent-rubric-vote-col";
+  headerRow.appendChild(voteTh);
+
+  rubric.sections.forEach((section) => {
+    const sectionTh = document.createElement("th");
+    sectionTh.colSpan = section.subsections.length;
+    sectionTh.textContent = section.name || "Sezione";
+    headerRow.appendChild(sectionTh);
+
+    section.subsections.forEach((sub, idx) => {
+      const isLast = idx === section.subsections.length - 1;
+      const subTh = document.createElement("th");
+      subTh.className = "parent-rubric-subheader" + (isLast ? " section-divider" : "");
+      subTh.innerHTML =
+        `${escapeHtml(sub.name || "Sub")} <span class="parent-rubric-max-badge">/${escapeHtml(String(sub.max))}</span>`;
+      subHeaderRow.appendChild(subTh);
+    });
+  });
+  thead.appendChild(headerRow);
+  thead.appendChild(subHeaderRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (let voteValue = 0; voteValue <= rubric.maxRow; voteValue++) {
+    const row = document.createElement("tr");
+    const voteTd = document.createElement("td");
+    voteTd.className = "parent-rubric-vote-cell";
+    voteTd.textContent = voteValue;
+    row.appendChild(voteTd);
+
+    rubric.sections.forEach((section) => {
+      section.subsections.forEach((sub, idx) => {
+        const isLast = idx === section.subsections.length - 1;
+        const td = document.createElement("td");
+        td.className = "parent-rubric-cell" + (isLast ? " section-divider" : "");
+        const subMaxNum = Number(sub.max);
+
+        if (voteValue > subMaxNum) {
+          td.classList.add("parent-rubric-cell-disabled");
+          td.textContent = "—";
+        } else {
+          // Nessun placeholder: cella vuota se il docente non ha scritto nulla per questo voto.
+          td.textContent = (sub.judgments && sub.judgments[String(voteValue)]) || "";
+          if (sub.studentScore !== null && sub.studentScore !== undefined && Number(sub.studentScore) === voteValue) {
+            td.classList.add("parent-rubric-cell-achieved");
+            td.title = "Il voto ottenuto in questa colonna";
+          }
+        }
+        row.appendChild(td);
+      });
+    });
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+  return wrap;
 }
 
 function formatMaybeNumber(value) {
