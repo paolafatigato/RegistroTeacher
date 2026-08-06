@@ -241,6 +241,44 @@ function buildTestCard(test) {
     card.appendChild(sectionsWrap);
   }
 
+  const rubricEntries = Array.isArray(test.rubric) ? test.rubric : Object.values(test.rubric || {});
+  if (rubricEntries.length > 0) {
+    const rubricWrap = document.createElement("div");
+    rubricWrap.className = "parent-test-rubric";
+    const rubricTitle = document.createElement("h4");
+    rubricTitle.className = "parent-test-rubric-title";
+    rubricTitle.textContent = "📐 Griglia di valutazione";
+    rubricWrap.appendChild(rubricTitle);
+
+    rubricEntries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "parent-rubric-row";
+
+      const head = document.createElement("div");
+      head.className = "parent-rubric-row-head";
+      const label = document.createElement("span");
+      label.className = "parent-rubric-row-label";
+      label.textContent = entry.section ? `${entry.section} — ${entry.name || "Voce"}` : (entry.name || "Voce");
+      head.appendChild(label);
+      const score = document.createElement("span");
+      score.className = "parent-rubric-row-score";
+      score.textContent = `${formatMaybeNumber(entry.score)} / ${formatMaybeNumber(entry.max)}`;
+      head.appendChild(score);
+      row.appendChild(head);
+
+      if (entry.judgment) {
+        const judgment = document.createElement("p");
+        judgment.className = "parent-rubric-row-judgment";
+        judgment.textContent = entry.judgment;
+        row.appendChild(judgment);
+      }
+
+      rubricWrap.appendChild(row);
+    });
+
+    card.appendChild(rubricWrap);
+  }
+
   if (test.generalComment) {
     const commentBox = document.createElement("div");
     commentBox.className = "parent-test-comment";

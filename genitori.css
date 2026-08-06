@@ -278,6 +278,54 @@ body {
   margin-bottom: 8px;
 }
 
+.parent-test-rubric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--docente-100);
+}
+
+.parent-test-rubric-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--docente-600);
+}
+
+.parent-rubric-row {
+  background: var(--white);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.parent-rubric-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.parent-rubric-row-label {
+  font-weight: 600;
+}
+
+.parent-rubric-row-score {
+  font-weight: 700;
+  color: var(--sonno-600);
+  white-space: nowrap;
+}
+
+.parent-rubric-row-judgment {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #5a5a5a;
+  font-style: italic;
+}
+
 .parent-test-date {
   font-size: 11.5px;
   color: #aaa;

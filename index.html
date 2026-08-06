@@ -50,6 +50,7 @@
         <h2>Classe</h2>
         <div class="panel-header-actions">
           <button id="backToHomeBtn" class="btn btn-secondary">Torna alle classi</button>
+          <button id="editClassInManagerBtn" class="icon-btn-classroom" aria-label="Gestisci classe in Classroom Manager" title="Rinomina, aggiungi studenti o elimina questa classe in Classroom Manager">✏️</button>
           <button id="deleteClassBtn" class="icon-btn" aria-label="Elimina classe">×</button>
         </div>
       </div>
@@ -58,21 +59,6 @@
           <label for="classSelect">Seleziona classe</label>
           <select id="classSelect"></select>
         </div>
-        <div class="field">
-          <label for="classRenameInput">Rinomina classe</label>
-          <input id="classRenameInput" type="text" />
-        </div>
-        <button id="renameClassBtn" class="btn btn-secondary">Aggiorna nome</button>
-      </div>
-      <div class="panel-actions">
-        <button id="addStudentBtn" class="btn btn-primary">Aggiungi studente</button>
-      </div>
-      <div class="bulk-students">
-        <div class="field">
-          <label for="bulkStudentsInput">Aggiungi studenti (nomi completi separati da virgole o righe)</label>
-          <textarea id="bulkStudentsInput" rows="3" placeholder="Reina Allmeta,&#10;Barbara Atanasova,&#10;Aida Bance,"></textarea>
-        </div>
-        <button id="addBulkStudentsBtn" class="btn btn-secondary">Aggiungi studenti</button>
       </div>
       <div class="table-wrapper">
         <table id="classStudentsTable" class="grade-table"></table>
@@ -272,6 +258,7 @@
         <span class="parents-class-default-label">👥 Imposta per tutta la classe (questa verifica):</span>
         <select id="parentsClassDefaultSelect" class="parent-mode-select"></select>
         <span id="parentsClassDefaultStatus" class="parents-class-default-status"></span>
+        <button id="parentsRubricToggleBtn" type="button" class="parent-rubric-toggle-btn"></button>
       </div>
 
       <div id="parentsList" class="parents-list"></div>
