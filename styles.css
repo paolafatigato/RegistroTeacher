@@ -2989,3 +2989,235 @@ h1, h2, h3 {
     display: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Colonna "Facilitata" (testo verticale) · Clessidra bonus/malus
+   ═══════════════════════════════════════════════════════════ */
+
+/* Intestazione verticale "Facilitata" */
+.grade-table th.dsa-col .vertical-label {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  letter-spacing: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Cella intestazione della spunta ⌛: testo libero + triangolino "condizione" */
+.check-label-th {
+  position: relative;
+}
+
+/* Colonna della spunta un po' più larga, per leggere il testo */
+.add-section-col-th {
+  width: 76px;
+  min-width: 76px;
+}
+
+.check-label-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.check-label-th .check-label-wrap input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  font-size: 10.5px;
+}
+
+/* Condizione scelta (+1, +½, −1…): compare sotto il testo */
+.check-bonus-badge {
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--good-bg);
+  color: var(--goodgrade);
+}
+
+.check-bonus-badge.is-malus {
+  background: var(--bad-bg);
+  color: var(--verybad);
+}
+
+/* Triangolino a destra: imposta cosa fa la spunta al voto */
+.check-bonus-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.check-bonus-trigger::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 11px 11px 0;
+  border-color: transparent rgba(85, 105, 159, 0.55) transparent transparent;
+  transform-origin: top right;
+  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.check-bonus-trigger:hover::after {
+  transform: scale(1.3);
+}
+
+.check-bonus-trigger.has-bonus::after {
+  border-color: transparent var(--goodgrade) transparent transparent;
+}
+
+.check-bonus-trigger.has-malus::after {
+  border-color: transparent var(--verybad) transparent transparent;
+}
+
+/* Menu bonus/malus (sotto la clessidra) */
+.check-bonus-menu {
+  position: fixed;
+  z-index: 3000;
+  width: 230px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--white);
+  border: 1.5px solid var(--glaucous);
+  box-shadow: var(--shadow-lift);
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-dark);
+  text-align: left;
+}
+
+.check-bonus-menu-title {
+  margin-bottom: 8px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  font-size: 12.5px;
+  color: var(--glaucous-dark);
+}
+
+.check-bonus-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.check-bonus-opt {
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e2e2;
+  background: #fafafa;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+
+.check-bonus-opt.is-bonus:hover { background: var(--good-bg); border-color: var(--goodgrade); }
+.check-bonus-opt.is-malus:hover { background: var(--bad-bg);  border-color: var(--verybad); }
+.check-bonus-opt.is-none:hover  { background: #f0f2fa;        border-color: var(--glaucous); }
+
+.check-bonus-opt.is-bonus.selected { background: var(--goodgrade); border-color: var(--goodgrade); color: #fff; }
+.check-bonus-opt.is-malus.selected { background: var(--verybad);  border-color: var(--verybad);  color: #fff; }
+.check-bonus-opt.is-none.selected  { background: var(--glaucous); border-color: var(--glaucous); color: #fff; }
+
+.check-bonus-opt.is-none {
+  width: 100%;
+  font-weight: 600;
+}
+
+.check-bonus-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.check-bonus-custom input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1.5px solid #ddd;
+  font: inherit;
+}
+
+.check-bonus-custom-ok {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--glaucous);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.check-bonus-menu-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #888;
+}
+
+/* Voto finale con bonus/malus: piccola etichetta nell'angolo della cella */
+.grade-table td.final-cell.has-check-bonus::after {
+  content: attr(data-bonus);
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  color: var(--goodgrade);
+  pointer-events: none;
+}
+
+.grade-table td.final-cell.has-check-malus::after {
+  color: var(--verybad);
+}
+
+
+/* Vista Classe: "F" = per quella verifica ha ricevuto la versione facilitata */
+.facilitated-mark {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.7em;
+  font-weight: 800;
+  background: rgba(159, 122, 234, 0.18);
+  color: #7c4dbd;
+  border: 1.5px solid rgba(159, 122, 234, 0.4);
+  vertical-align: middle;
+}
+
+/* Anteprima genitori: bonus/malus incluso nel voto finale */
+.parent-final-score {
+  flex-wrap: wrap;
+}
+
+.parent-final-bonus {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--zaino-100);
+  color: #2f5b40;
+}
+
+.parent-final-bonus.is-malus {
+  background: var(--emozioni-100);
+  color: #8a2a22;
+}

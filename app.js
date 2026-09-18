@@ -795,7 +795,7 @@ function renderClassesList() {
     const openBtn = document.createElement("button");
     openBtn.classList.add("btn", "btn-secondary");
     openBtn.textContent = "Apri";
-    const classColor = state.settings?.classColors?.[classItem.id];
+    const classColor = getClassColor(classItem.id);
     if (classColor) {
       openBtn.style.borderLeft = `5px solid ${classColor}`;
       openBtn.style.paddingLeft = "11px";
@@ -854,13 +854,6 @@ function renderClassDetail() {
   studentHeader.textContent = "Studente";
   headerRow.appendChild(studentHeader);
 
-  // Colonna DSA/104
-  const dsaHeader = document.createElement("th");
-  dsaHeader.textContent = "DSA/104";
-  dsaHeader.title = "Studente con DSA o Legge 104 – riceverà automaticamente la versione facilitata";
-  dsaHeader.style.cssText = "width:80px;text-align:center;font-size:.85em;";
-  headerRow.appendChild(dsaHeader);
-
   // Filtra i test: mostra solo quelli attivi (non archiviati) che hanno almeno un voto nella classe
   const visibleTests = state.tests.filter((test) => !test.archived && testHasGradesInClass(test, selectedClass));
   
@@ -902,11 +895,7 @@ function renderClassDetail() {
   const tbody = document.createElement("tbody");
 
   selectedClass.students.forEach((student) => {
-    const isFacilitated = student.facilitated === true;
     const row = document.createElement("tr");
-    if (isFacilitated) {
-      row.classList.add("facilitated-list-row");
-    }
 
     // Nome studente
     const studentCell = document.createElement("td");
@@ -920,29 +909,7 @@ function renderClassDetail() {
       renderClassDetail();
     });
     studentCell.appendChild(nameInput);
-    // Badge DSA inline accanto al nome
-    if (isFacilitated) {
-      const badge = document.createElement("span");
-      badge.className = "dsa-badge";
-      badge.textContent = "DSA/104";
-      studentCell.appendChild(badge);
-    }
     row.appendChild(studentCell);
-
-    // Toggle DSA/104
-    const dsaCell = document.createElement("td");
-    dsaCell.style.textAlign = "center";
-    const dsaToggle = document.createElement("input");
-    dsaToggle.type = "checkbox";
-    dsaToggle.checked = isFacilitated;
-    dsaToggle.title = "Segna come DSA / Legge 104";
-    dsaToggle.addEventListener("change", (event) => {
-      student.facilitated = event.target.checked;
-      saveState();
-      renderClassDetail();
-    });
-    dsaCell.appendChild(dsaToggle);
-    row.appendChild(dsaCell);
 
     visibleTests.forEach((test) => {
       const score = getFinalScore(student, test);
@@ -952,6 +919,14 @@ function renderClassDetail() {
       btn.dataset.testId = test.id;
       btn.textContent = formatScore(score);
       cell.appendChild(btn);
+      // "F" = per questa verifica ha ricevuto la versione facilitata
+      if (isStudentFacilitated(student, test)) {
+        const mark = document.createElement("span");
+        mark.className = "facilitated-mark";
+        mark.textContent = "F";
+        mark.title = "Ha ricevuto la verifica facilitata";
+        cell.appendChild(mark);
+      }
       row.appendChild(cell);
     });
 
@@ -1148,7 +1123,7 @@ function renderTestsList() {
 
     // ── Striscia colori classi in cima alla card ──────────────────────────
     const classColors = (test.classIds || [])
-      .map(cid => state.settings?.classColors?.[cid])
+      .map(cid => getClassColor(cid))
       .filter(Boolean);
     if (classColors.length === 1) {
       card.style.borderTop = `5px solid ${classColors[0]}`;
@@ -1204,7 +1179,7 @@ function renderTestsList() {
         const date = test.classDates[cid] || "";
         const chip = document.createElement("span");
         chip.className = "class-date-chip";
-        const clsColor = state.settings?.classColors?.[cid];
+        const clsColor = getClassColor(cid);
         if (clsColor) {
           chip.style.background = clsColor + "33"; // ~20% opacità
           chip.style.border = `1px solid ${clsColor}`;
@@ -1334,7 +1309,7 @@ function renderTestsList() {
       chk.className = "cls-check";
       chk.dataset.classId = c.id;
       chk.checked = test.classIds.includes(c.id);
-      const clsColor = state.settings?.classColors?.[c.id];
+      const clsColor = getClassColor(c.id);
       if (clsColor) chk.style.accentColor = clsColor;
       const nameSp = document.createElement("span");
       nameSp.style.cssText = "display:inline-flex;align-items:center;gap:6px;";
@@ -1646,6 +1621,23 @@ function renderSettingsDialog() {
       label.className = "class-color-label";
       label.textContent = cls.name || "Classe";
       row.appendChild(label);
+
+      // Colore arrivato da Classroom Manager: decide lui, qui è solo in lettura
+      const cmColor = state._cmClassColors?.[cls.id];
+      if (cmColor) {
+        const cmNote = document.createElement("span");
+        cmNote.className = "settings-hint";
+        cmNote.textContent = "🔗 Impostato in Classroom Manager";
+        row.appendChild(cmNote);
+        const cmPreview = document.createElement("div");
+        cmPreview.className = "class-color-preview";
+        cmPreview.style.background = cmColor;
+        cmPreview.title = cls.name;
+        cmPreview.textContent = cls.name?.[0] ?? "?";
+        row.appendChild(cmPreview);
+        classColorsList.appendChild(row);
+        return;
+      }
 
       const swatches = document.createElement("div");
       swatches.className = "class-color-swatches";
@@ -1977,8 +1969,8 @@ function renderTestTable() {
   headerRow.appendChild(studentHeader);
 
   const versionHeader = document.createElement("th");
-  versionHeader.innerHTML = "DSA<br><small style='font-weight:400;font-size:10px'>/ 104</small>";
-  versionHeader.title = "Spunta per assegnare automaticamente la versione facilitata a questo studente in tutte le verifiche";
+  versionHeader.innerHTML = '<span class="vertical-label">Facilitata</span>';
+  versionHeader.title = "Spunta se lo studente ha ricevuto la verifica facilitata (vale solo per questa verifica)";
   versionHeader.classList.add("dsa-col");
   versionHeader.rowSpan = 4;
   headerRow.appendChild(versionHeader);
@@ -2178,7 +2170,36 @@ function renderTestTable() {
     saveState();
     renderTestTable();
   });
-  checkLabelTh.appendChild(checkLabelInput);
+  // Clessidra = testo libero (etichetta della spunta).
+  // Triangolino a destra = condizione: +1, +½, −1, −½… Se non scegli nulla,
+  // mettere la spunta non cambia il voto.
+  const bonusNow = getCheckBonus(selectedTest);
+  const checkLabelWrap = document.createElement("div");
+  checkLabelWrap.className = "check-label-wrap";
+  checkLabelWrap.appendChild(checkLabelInput);
+  if (bonusNow !== 0) {
+    const checkBonusBadge = document.createElement("span");
+    checkBonusBadge.className = "check-bonus-badge" + (bonusNow < 0 ? " is-malus" : "");
+    checkBonusBadge.textContent = formatCheckBonus(bonusNow);
+    checkLabelWrap.appendChild(checkBonusBadge);
+  }
+
+  const checkBonusTrigger = document.createElement("div");
+  checkBonusTrigger.className = "check-bonus-trigger" + (bonusNow > 0 ? " has-bonus" : "") + (bonusNow < 0 ? " has-malus" : "");
+  checkBonusTrigger.title = bonusNow !== 0
+    ? `Con la spunta il voto cambia di ${formatCheckBonus(bonusNow)} (clicca per cambiare)`
+    : "Clicca per impostare cosa fa la spunta al voto (+1, +½, −1, −½…)";
+  checkBonusTrigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (openCheckBonusMenu._el && openCheckBonusMenu._anchor === checkBonusTrigger) {
+      closeCheckBonusMenu();
+    } else {
+      openCheckBonusMenu(checkBonusTrigger, selectedTest);
+    }
+  });
+
+  checkLabelTh.appendChild(checkLabelWrap);
+  checkLabelTh.appendChild(checkBonusTrigger);
   maxRow.appendChild(checkLabelTh);
 
   const finalMaxTh = document.createElement("th");
@@ -2198,8 +2219,8 @@ function renderTestTable() {
   students.forEach((student) => {
     const row = document.createElement("tr");
 
-    // Flag globale: se lo studente è DSA/104 è facilitato su TUTTE le verifiche
-    const isFacilitated = student.facilitated === true;
+    // Per-verifica: lo studente ha ricevuto la versione facilitata di QUESTA verifica
+    const isFacilitated = isStudentFacilitated(student, selectedTest);
 
     // Se facilitato, forza automaticamente la versione facilitata per questa verifica
     const effectiveVersionId = isFacilitated && facilitatedVersionId
@@ -2248,10 +2269,10 @@ function renderTestTable() {
     const versionToggle = document.createElement("input");
     versionToggle.type = "checkbox";
     versionToggle.checked = isFacilitated;
-    versionToggle.title = "DSA / 104 – versione facilitata per tutte le verifiche";
+    versionToggle.title = "Ha ricevuto la verifica facilitata (vale solo per questa verifica)";
     versionToggle.addEventListener("change", (event) => {
-      // Imposta il flag globale sullo studente (vale per TUTTE le verifiche)
-      student.facilitated = event.target.checked;
+      // Vale solo per la verifica corrente
+      setStudentFacilitated(student, selectedTest, event.target.checked);
       saveState();
       renderTestTable();
     });
@@ -2288,8 +2309,8 @@ function renderTestTable() {
           }
           // Logica di disabilitazione: Standard disabilita chi ha spunta, Facilitata disabilita chi NON l'ha
           const shouldDisable = (state.selectedTestVersionId === facilitatedVersionId) ? 
-            (student.facilitated !== true) : 
-            (student.facilitated === true);
+            (!isFacilitated) : 
+            (isFacilitated);
           const input = createScoreInput(
             student,
             selectedTest.id,
@@ -2321,8 +2342,8 @@ function renderTestTable() {
         const cell = document.createElement("td");
         // Logica di disabilitazione: Standard disabilita chi ha spunta, Facilitata disabilita chi NON l'ha
         const shouldDisable = (state.selectedTestVersionId === facilitatedVersionId) ? 
-          (student.facilitated !== true) : 
-          (student.facilitated === true);
+          (!isFacilitated) : 
+          (isFacilitated);
         const input = createScoreInput(
           student,
           selectedTest.id,
@@ -2378,6 +2399,8 @@ function renderTestTable() {
     checkboxEl.addEventListener("change", (e) => {
       checkData.checked = e.target.checked;
       saveState();
+      // Con un bonus/malus attivo il voto finale cambia: ridisegna
+      if (getCheckBonus(selectedTest) !== 0) render();
     });
     checkWrapper.appendChild(checkboxEl);
 
@@ -2432,6 +2455,7 @@ function renderTestTable() {
         if (isLowGrade(scoreToShow)) finalCell.classList.add("low-grade");
         const tierClass = gradeTierClass(scoreToShow);
         if (tierClass) finalCell.classList.add(tierClass);
+        markFinalCellBonus(finalCell, student, selectedTest);
       }
     }
     row.appendChild(finalCell);
@@ -2719,7 +2743,7 @@ function updateFinalCellInRow(input, student, test) {
 
   if (!hasAnyScoreEntered(student, selectedTest, activeVersion)) {
     finalCell.textContent = "—";
-    finalCell.classList.remove("low-grade");
+    finalCell.classList.remove("low-grade", "has-check-bonus", "has-check-malus");
     finalCell.classList.add("not-graded");
     finalCell.title = "Nessun voto inserito ancora";
     return;
@@ -2730,6 +2754,7 @@ function updateFinalCellInRow(input, student, test) {
   finalCell.classList.toggle("low-grade", isLowGrade(finalScore));
   const tierClass = gradeTierClass(finalScore);
   if (tierClass) finalCell.classList.add(tierClass);
+  markFinalCellBonus(finalCell, student, selectedTest);
 }
 
 function ensureScoreStore(student, testId, sectionId) {
@@ -2798,7 +2823,14 @@ function getFinalScore(student, test, version) {
     return null;
   }
 
-  return (weightedSum * 10) / weightedMaxSum;
+  const baseScore = (weightedSum * 10) / weightedMaxSum;
+
+  // Bonus/malus della spunta ⌛ (solo se lo studente ha già almeno un voto inserito)
+  const checkBonus = getStudentCheckBonus(student, test);
+  if (checkBonus !== 0 && hasAnyScoreEntered(student, test, targetVersion)) {
+    return Math.min(10, Math.max(0, baseScore + checkBonus));
+  }
+  return baseScore;
 }
 
 /**
@@ -3416,6 +3448,7 @@ function buildTestFromTemplate(archivedTest, title, subject, category) {
     versions,
     facilitatedVersionId,
     checkboxLabel: archivedTest.checkboxLabel,
+    checkBonus: archivedTest.checkBonus ?? 0,
   };
 }
 
@@ -3626,7 +3659,7 @@ function refreshNewTestClassesField() {
 
     // Se per questa classe è stato scelto un colore (in Impostazioni), il chip
     // lo eredita: bordo/sfondo leggero da spuntato, colore pieno da selezionato.
-    const color = state.settings?.classColors?.[cls.id];
+    const color = getClassColor(cls.id);
     if (color) {
       chip.style.setProperty("--chip-border", color);
       chip.style.setProperty("--chip-bg", color + "22");
@@ -3724,14 +3757,8 @@ function getStudentAverage(student) {
   // Filtra i voti: esclude null, undefined e voti <= 2 (non svolti)
   // Se lo studente è facilitato, usa la versione facilitata di ogni test
   const scores = activeTests
-    .map((test) => {
-      if (student.facilitated === true) {
-        const facilitatedVersion = getVersionById(test, getFacilitatedVersionId(test));
-        return getFinalScore(student, test, facilitatedVersion);
-      } else {
-        return getFinalScore(student, test);
-      }
-    })
+    // getFinalScore usa già la versione che lo studente ha ricevuto per quella verifica
+    .map((test) => getFinalScore(student, test))
     .filter((value) => value !== null && value !== undefined && value > 2);
 
   if (scores.length === 0) {
@@ -4250,9 +4277,11 @@ function startClassesListener() {
   fbGradingUnsubscribe = gradingRef.on(
     "value",
     (snapshot) => {
+      const data = snapshot.val();
+      // I colori delle classi si riallineano SEMPRE (anche subito dopo un nostro salvataggio)
+      if (data && syncClassColorsFromGrading(data.settings) && fbIgnoreGrading) render();
       // Ignora l'aggiornamento se siamo stati noi a scrivere (evita loop)
       if (fbIgnoreGrading) return;
-      const data = snapshot.val();
       if (!data) return; // nessun dato grading ancora: va bene, partiamo vuoti
       applyFirebaseGrading(data);
     },
@@ -4325,6 +4354,7 @@ function applyFirebaseGrading(data) {
     : (data.archivedTests && typeof data.archivedTests === 'object' ? Object.values(data.archivedTests) : []);
   state.archivedTests = rawArchivedTests.filter(Boolean).map(normalizeTestFromFirebase);
 
+  state._gradingFromFirebase = true; // da ora i test sono quelli veri di Firebase
   // Memorizza le mappe in state così mergeFirebaseClasses le userà
   state._studentScores = data.scores || {};
   state._studentTestVersions = data.testVersions || {};
@@ -4351,6 +4381,7 @@ function applyFirebaseGrading(data) {
     });
   });
 
+  migrateLegacyFacilitated();
   render();
 }
 
@@ -4372,12 +4403,16 @@ function mergeFirebaseClasses(fbData) {
   // Firebase converte gli array JS in oggetti { "0": {...}, "1": {...} }
   const rawClasses = Array.isArray(fbData) ? fbData : Object.values(fbData);
 
+  const cmColors = {}; // colori delle classi impostati in Classroom Manager
   const newClasses = rawClasses
     .filter(Boolean)
     .map((classData) => {
       // L'id della CLASSE è numerico (timestamp), usalo come stringa
       const classId = String(classData.id || createId("class"));
       const className = classData.name || classId;
+      // Colore scelto in Classroom Manager per questa classe (se presente)
+      const cmColor = normalizeHexColor(classData.color ?? classData.colore ?? classData.classColor);
+      if (cmColor) cmColors[classId] = cmColor;
 
       // Gli studenti in classroomanager sono un array di { fullName, displayName }
       // senza campo "id" — Firebase li converte in oggetto con chiavi "0","1","2"...
@@ -4420,6 +4455,8 @@ function mergeFirebaseClasses(fbData) {
 
   newClasses.sort((a, b) => a.name.localeCompare(b.name, "it"));
   state.classes = newClasses;
+  state._cmClassColors = cmColors;
+  migrateLegacyFacilitated();
 
   const hasSelected = state.classes.some((c) => c.id === state.selectedClassId);
   if (!hasSelected && state.classes.length > 0) {
@@ -4749,10 +4786,10 @@ function renderParentsView() {
   }
 
   students.forEach((student) => {
-    const isFacilitated = student.facilitated === true;
+    const isFacilitated = isStudentFacilitated(student, selectedTest);
     const effectiveVersionId = isFacilitated && facilitatedVersionId
       ? facilitatedVersionId
-      : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
+      : getStudentVersionId(student, selectedTest.id, defaultVersion?.id);
     const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
 
     const cfg = ensureParentConfigStore(student, selectedTest.id);
@@ -4771,7 +4808,7 @@ function renderParentsView() {
     if (isFacilitated) {
       const badge = document.createElement("span");
       badge.className = "badge badge-facilitated";
-      badge.textContent = "DSA/104";
+      badge.textContent = "Facilitata";
       head.appendChild(badge);
     }
     const statusEl = document.createElement("span");
@@ -4905,10 +4942,10 @@ function renderParentsView() {
  *  pubblicazione di tutta la classe sia da quella di un singolo alunno,
  *  così restano sempre coerenti tra loro. */
 function computeParentSnapshotForStudent(student, selectedClass, selectedTest, defaultVersion, facilitatedVersionId, now) {
-  const isFacilitated = student.facilitated === true;
+  const isFacilitated = isStudentFacilitated(student, selectedTest);
   const effectiveVersionId = isFacilitated && facilitatedVersionId
     ? facilitatedVersionId
-    : getStudentVersionId(student, selectedTest.id, state.selectedTestVersionId ?? defaultVersion?.id);
+    : getStudentVersionId(student, selectedTest.id, defaultVersion?.id);
   const version = getVersionById(selectedTest, effectiveVersionId) ?? defaultVersion;
   const cfg = ensureParentConfigStore(student, selectedTest.id);
   const sectionsMode = cfg.sectionsMode;
@@ -4953,6 +4990,14 @@ function computeParentSnapshotForStudent(student, selectedClass, selectedTest, d
     testTitle: selectedTest.title || "",
     subject: selectedTest.subject || "",
     finalScore: formatScore(getFinalScore(student, selectedTest, version)),
+    // Bonus/malus della spunta incluso nel voto (null se non applicato)
+    bonus: (getStudentCheckBonus(student, selectedTest) !== 0 && hasAnyScoreEntered(student, selectedTest, version))
+      ? {
+          value: getStudentCheckBonus(student, selectedTest),
+          text: formatCheckBonus(getStudentCheckBonus(student, selectedTest)),
+          label: selectedTest.checkboxLabel || "",
+        }
+      : null,
     sections: sectionsOut,
     rubric: rubricOut,
     generalComment: cfg.generalComment || "",
@@ -5738,6 +5783,12 @@ function buildParentPreviewTestCard(test) {
     finalWrap.innerHTML =
       `<span class="parent-final-score-label">Voto finale</span>` +
       `<span class="parent-final-score-value">${escapeHtml(String(test.finalScore))}</span>`;
+    if (test.bonus && test.bonus.text) {
+      const bonusEl = document.createElement("span");
+      bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
+      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
+      finalWrap.appendChild(bonusEl);
+    }
     card.appendChild(finalWrap);
   }
 
@@ -6180,4 +6231,253 @@ function pasteSelectedCells(startInput) {
       targetInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
   });
+}
+
+
+// =====================================================================
+//  COLORI CLASSI DA CLASSROOM MANAGER  ·  BONUS/MALUS DELLA SPUNTA ⌛
+//  Solo "function": niente let/const a livello di file, perché init()
+//  parte a inizio file e andrebbero in TDZ.
+// =====================================================================
+
+/** "#abc" / "abc" / "#aabbcc" → "#aabbcc". Se non è un colore esadecimale → null. */
+function normalizeHexColor(value) {
+  if (typeof value !== "string") return null;
+  let v = value.trim();
+  if (/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) v = "#" + v;
+  if (/^#[0-9a-f]{3}$/i.test(v)) v = "#" + v.slice(1).split("").map((c) => c + c).join("");
+  return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+}
+
+/** Colore di una classe: quello di Classroom Manager ha la precedenza, poi quello locale. */
+function getClassColor(classId) {
+  if (classId === null || classId === undefined) return null;
+  const id = String(classId);
+  return (state._cmClassColors && state._cmClassColors[id])
+    || (state.settings && state.settings.classColors && state.settings.classColors[id])
+    || null;
+}
+
+/**
+ * Riallinea state.settings.classColors con ciò che c'è su Firebase
+ * (users/{uid}/grading/settings/classColors). Ritorna true se è cambiato qualcosa.
+ */
+function syncClassColorsFromGrading(settings) {
+  const incoming = settings && settings.classColors;
+  if (!incoming || typeof incoming !== "object") return false;
+  if (!state.settings) state.settings = { subjects: [], categories: [], classColors: {} };
+  const current = state.settings.classColors || {};
+  const keys = new Set([...Object.keys(current), ...Object.keys(incoming)]);
+  let changed = false;
+  keys.forEach((k) => {
+    if (String(current[k] || "").toLowerCase() !== String(incoming[k] || "").toLowerCase()) changed = true;
+  });
+  if (changed) state.settings.classColors = { ...incoming };
+  return changed;
+}
+
+// ── Bonus / malus della spunta ⌛ ────────────────────────────────────
+
+/** Bonus (o malus, se negativo) impostato per la verifica. 0 = la spunta non cambia il voto. */
+function getCheckBonus(test) {
+  const n = parseNumber(test && test.checkBonus);
+  return n === null || !isFinite(n) ? 0 : n;
+}
+
+function formatCheckBonus(n) {
+  if (!n) return "";
+  const abs = Math.abs(n);
+  const whole = Math.floor(abs);
+  const frac = Math.round((abs - whole) * 100) / 100;
+  const glyph = { 0.25: "¼", 0.5: "½", 0.75: "¾" }[frac];
+  const body = glyph !== undefined
+    ? (whole > 0 ? String(whole) + glyph : glyph)
+    : String(Math.round(abs * 100) / 100);
+  return (n > 0 ? "+" : "−") + body;
+}
+
+/** Bonus/malus realmente applicato a uno studente: vale solo se la spunta è attiva. */
+function getStudentCheckBonus(student, test) {
+  if (!test) return 0;
+  const bonus = getCheckBonus(test);
+  if (!bonus) return 0;
+  const data = student && student.checks && student.checks[test.id];
+  return data && data.checked ? bonus : 0;
+}
+
+/** Segna la cella FINAL (piccola etichetta +0.5 / −1 nell'angolo + tooltip). */
+function markFinalCellBonus(finalCell, student, test) {
+  const applied = getStudentCheckBonus(student, test);
+  finalCell.classList.toggle("has-check-bonus", applied !== 0);
+  finalCell.classList.toggle("has-check-malus", applied < 0);
+  if (applied !== 0) {
+    finalCell.dataset.bonus = formatCheckBonus(applied);
+    finalCell.title = `Include ${formatCheckBonus(applied)} (${test.checkboxLabel || "spunta"})`;
+  } else {
+    delete finalCell.dataset.bonus;
+  }
+}
+
+function closeCheckBonusMenu() {
+  const el = openCheckBonusMenu._el;
+  if (el) el.remove();
+  openCheckBonusMenu._el = null;
+  openCheckBonusMenu._anchor = null;
+  document.removeEventListener("mousedown", onCheckBonusMenuOutside, true);
+  document.removeEventListener("keydown", onCheckBonusMenuKey, true);
+  window.removeEventListener("resize", closeCheckBonusMenu);
+  window.removeEventListener("scroll", closeCheckBonusMenu, true);
+}
+
+function onCheckBonusMenuOutside(e) {
+  const el = openCheckBonusMenu._el;
+  const anchor = openCheckBonusMenu._anchor;
+  if (!el || el.contains(e.target)) return;
+  if (anchor && anchor.contains(e.target)) return; // ci pensa il click sul pulsante (apre/chiude)
+  closeCheckBonusMenu();
+}
+
+function onCheckBonusMenuKey(e) {
+  if (e.key === "Escape") closeCheckBonusMenu();
+}
+
+function applyCheckBonus(testId, value) {
+  const test = state.tests.find((t) => t.id === testId);
+  if (!test) return;
+  test.checkBonus = value; // 0 = nessun effetto
+  saveState();
+  closeCheckBonusMenu();
+  render();
+}
+
+/** Piccolo menu sotto la clessidra: scegli cosa succede al voto quando c'è la spunta. */
+function openCheckBonusMenu(anchor, test) {
+  closeCheckBonusMenu();
+  const current = getCheckBonus(test);
+
+  const menu = document.createElement("div");
+  menu.className = "check-bonus-menu";
+  menu.setAttribute("role", "dialog");
+
+  const title = document.createElement("div");
+  title.className = "check-bonus-menu-title";
+  title.textContent = "Con la spunta il voto cambia di…";
+  menu.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.className = "check-bonus-menu-grid";
+  [1, 0.5, 0.25, -0.25, -0.5, -1].forEach((value) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "check-bonus-opt " + (value > 0 ? "is-bonus" : "is-malus") + (value === current ? " selected" : "");
+    btn.textContent = formatCheckBonus(value);
+    btn.addEventListener("click", () => applyCheckBonus(test.id, value));
+    grid.appendChild(btn);
+  });
+  menu.appendChild(grid);
+
+  const noneBtn = document.createElement("button");
+  noneBtn.type = "button";
+  noneBtn.className = "check-bonus-opt is-none" + (current === 0 ? " selected" : "");
+  noneBtn.textContent = "Non cambia (solo spunta)";
+  noneBtn.addEventListener("click", () => applyCheckBonus(test.id, 0));
+  menu.appendChild(noneBtn);
+
+  const customRow = document.createElement("div");
+  customRow.className = "check-bonus-custom";
+  const customLabel = document.createElement("span");
+  customLabel.textContent = "Altro:";
+  const customInput = document.createElement("input");
+  customInput.type = "number";
+  customInput.step = "0.25";
+  customInput.min = "-10";
+  customInput.max = "10";
+  customInput.placeholder = "es. 0.75";
+  const customOk = document.createElement("button");
+  customOk.type = "button";
+  customOk.className = "check-bonus-custom-ok";
+  customOk.textContent = "OK";
+  const applyCustom = () => {
+    const n = parseNumber(customInput.value);
+    if (n === null || !isFinite(n)) { customInput.focus(); return; }
+    applyCheckBonus(test.id, Math.max(-10, Math.min(10, n)));
+  };
+  customOk.addEventListener("click", applyCustom);
+  customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyCustom(); } });
+  customRow.appendChild(customLabel);
+  customRow.appendChild(customInput);
+  customRow.appendChild(customOk);
+  menu.appendChild(customRow);
+
+  const note = document.createElement("div");
+  note.className = "check-bonus-menu-note";
+  note.textContent = "Se non scegli nulla, la spunta non cambia il voto. Il voto resta sempre tra 0 e 10.";
+  menu.appendChild(note);
+
+  document.body.appendChild(menu);
+
+  // Posizione: sotto la clessidra, dentro lo schermo
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = r.right - mw; // allineato al triangolino
+  left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+  let top = r.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+
+  openCheckBonusMenu._el = menu;
+  openCheckBonusMenu._anchor = anchor;
+  document.addEventListener("mousedown", onCheckBonusMenuOutside, true);
+  document.addEventListener("keydown", onCheckBonusMenuKey, true);
+  window.addEventListener("resize", closeCheckBonusMenu);
+  window.addEventListener("scroll", closeCheckBonusMenu, true);
+}
+
+// ── "Facilitata" per singola verifica ────────────────────────────────
+// Non è più un flag dello studente: dice se, PER QUESTA verifica, ha ricevuto
+// la versione facilitata. Si appoggia su student.testVersions[testId], la
+// stessa mappa che legge anche Classroom Manager per calcolare i voti.
+
+function isStudentFacilitated(student, test) {
+  if (!student || !test) return false;
+  const facilitatedId = getFacilitatedVersionId(test);
+  const defaultId = getDefaultVersion(test)?.id ?? null;
+  if (!facilitatedId || facilitatedId === defaultId) return false;
+  return getStudentVersionId(student, test.id, defaultId) === facilitatedId;
+}
+
+function setStudentFacilitated(student, test, value) {
+  if (!student || !test) return;
+  const defaultId = getDefaultVersion(test)?.id ?? null;
+  setStudentVersionId(student, test.id, value ? getFacilitatedVersionId(test) : defaultId);
+}
+
+/**
+ * Una tantum: chi aveva il vecchio flag globale "DSA/104" viene segnato come
+ * facilitato su tutte le verifiche già esistenti (per non cambiare nulla di ciò
+ * che vedevi finora). Poi il flag globale si azzera e vale solo la scelta
+ * per-verifica. Parte solo quando classi e verifiche sono arrivate da Firebase.
+ */
+function migrateLegacyFacilitated() {
+  if (!state._gradingFromFirebase || !state.classes.length) return;
+  let changed = false;
+  state.classes.forEach((cls) => {
+    cls.students.forEach((student) => {
+      if (student.facilitated !== true) return;
+      state.tests.forEach((test) => {
+        const facilitatedId = getFacilitatedVersionId(test);
+        if (!facilitatedId) return;
+        if (!student.testVersions) student.testVersions = {};
+        if (student.testVersions[test.id] === undefined) student.testVersions[test.id] = facilitatedId;
+      });
+      student.facilitated = false;
+      changed = true;
+    });
+  });
+  if (changed) {
+    state._studentFacilitated = {};
+    saveState();
+  }
 }

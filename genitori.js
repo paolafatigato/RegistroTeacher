@@ -286,6 +286,13 @@ function buildTestCard(test) {
     const finalWrap = document.createElement("div");
     finalWrap.className = "parent-final-score";
     finalWrap.innerHTML = `<span class="parent-final-score-label">Voto finale</span><span class="parent-final-score-value">${escapeHtml(String(test.finalScore))}</span>`;
+    // Bonus/malus già incluso nel voto (es. consegna in tempo: +½)
+    if (test.bonus && test.bonus.text) {
+      const bonusEl = document.createElement("span");
+      bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
+      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
+      finalWrap.appendChild(bonusEl);
+    }
     card.appendChild(finalWrap);
   }
 

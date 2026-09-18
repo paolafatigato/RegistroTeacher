@@ -262,8 +262,23 @@ body {
 .parent-final-score {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.parent-final-bonus {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--zaino-100);
+  color: #2f5b40;
+}
+
+.parent-final-bonus.is-malus {
+  background: var(--emozioni-100);
+  color: #8a2a22;
 }
 
 .parent-final-score-label {
