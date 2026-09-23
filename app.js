@@ -358,10 +358,20 @@ function init() {
   if (rubricPrintBtn) {
     rubricPrintBtn.addEventListener("click", () => {
       document.body.classList.add("printing-rubric");
+      // @page non si può limitare con una classe CSS: lo inserisco solo
+      // per questa stampa, così le altre stampe dell'app restano invariate.
+      let pageStyle = document.getElementById("rubricPageStyle");
+      if (!pageStyle) {
+        pageStyle = document.createElement("style");
+        pageStyle.id = "rubricPageStyle";
+        pageStyle.textContent = "@page { size: A4 landscape; margin: 10mm; }";
+        document.head.appendChild(pageStyle);
+      }
       window.print();
     });
     window.addEventListener("afterprint", () => {
       document.body.classList.remove("printing-rubric");
+      document.getElementById("rubricPageStyle")?.remove();
     });
   }
 
@@ -3063,6 +3073,14 @@ function renderRubricGrid() {
       });
       subWrap.appendChild(subName);
 
+      // Copia testuale del nome colonna: visibile solo in stampa (va a capo)
+      const subNamePrint = document.createElement("span");
+      subNamePrint.className = "rubric-print-text rubric-print-header";
+      subNamePrint.textContent = sub.name || "Sub";
+      subName.addEventListener("input", (e) => {
+        subNamePrint.textContent = e.target.value;
+      });
+      subWrap.appendChild(subNamePrint);
       const maxBadge = document.createElement("span");
       maxBadge.className = "rubric-max-badge";
       maxBadge.textContent = `/${getSubsectionMax(section, sub, fallbackPerSub)}`;
@@ -3122,7 +3140,16 @@ function renderRubricGrid() {
             saveState();
           });
           td.appendChild(input);
-        }
+
+          // Copia testuale del giudizio: visibile solo in stampa (va a capo)
+          const printText = document.createElement("div");
+          printText.className = "rubric-print-text";
+          printText.textContent = input.value;
+          input.addEventListener("input", (e) => {
+            printText.textContent = e.target.value;
+          });
+          td.appendChild(printText);
+                }
         row.appendChild(td);
       });
     });

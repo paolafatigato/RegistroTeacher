@@ -2952,6 +2952,11 @@ h1, h2, h3 {
   color: #bbb;
 }
 
+/* Copia testuale dei giudizi: nascosta a schermo, usata solo in stampa */
+.rubric-print-text {
+  display: none;
+}
+
 /* ── Stampa: nasconde tutta la pagina e mostra solo #rubricPrintArea ──
    Trucco classico: tutto invisibile, poi solo l'area voluta (e i suoi
    discendenti) tornano visibili e vengono riposizionati in cima al foglio. */
@@ -2969,14 +2974,75 @@ h1, h2, h3 {
     left: 0;
     width: 100%;
   }
-  body.printing-rubric .rubric-table {
-    min-width: 0;
-    width: 100%;
-    font-size: 12px;
+
+  /* Niente scroll orizzontale: la tabella si adatta al foglio */
+  body.printing-rubric #rubricPrintArea .table-wrapper {
+    overflow: visible !important;
+    box-shadow: none !important;
+    background: none !important;
+    border: 1px solid #ccc;
   }
+
+  body.printing-rubric .rubric-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed;          /* colonne di larghezza uguale */
+    font-size: 10.5px;
+  }
+
+  body.printing-rubric .rubric-table th,
+  body.printing-rubric .rubric-table td {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    padding: 5px 6px;
+    vertical-align: top;
+    border: 1px solid #bbb;
+  }
+
+  body.printing-rubric .rubric-table th.rubric-vote-col,
+  body.printing-rubric .rubric-table td.rubric-vote-cell {
+    width: 38px;
+    min-width: 0;
+    max-width: none;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  /* Input nascosti, al loro posto il testo che va a capo */
   body.printing-rubric .rubric-table input {
-    border: none !important;
-    background: transparent !important;
+    display: none !important;
+  }
+  body.printing-rubric .rubric-print-text {
+    display: block;
+    text-align: left;
+    white-space: pre-wrap;
+    line-height: 1.3;
+  }
+  body.printing-rubric .rubric-print-header {
+    display: inline;
+    font-weight: 700;
+    text-align: center;
+  }
+  body.printing-rubric .subheader-cell {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 4px;
+  }
+
+  /* Una riga di voto non viene spezzata tra due pagine;
+     l'intestazione si ripete su ogni pagina */
+  body.printing-rubric .rubric-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body.printing-rubric .rubric-table thead {
+    display: table-header-group;
+  }
+  body.printing-rubric .rubric-table thead th {
+    position: static !important;
   }
   /* Il placeholder "Giudizio…" è solo un aiuto in editing: in stampa deve
      restare invisibile, così le celle senza giudizio escono vuote invece
