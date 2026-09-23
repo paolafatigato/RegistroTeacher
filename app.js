@@ -2176,7 +2176,7 @@ function renderTestTable() {
     gradeTable.querySelectorAll(".check-cell-wrapper input[type='checkbox']").forEach(cb => {
       cb.title = newLabel;
     });
-    gradeTable.querySelectorAll(".check-note-input").forEach(div => {
+    gradeTable.querySelectorAll(".check-note-input[data-uses-label]").forEach(div => {
       div.textContent = newLabel;
     });
   });
@@ -2414,17 +2414,52 @@ function renderTestTable() {
     checkboxEl.addEventListener("change", (e) => {
       checkData.checked = e.target.checked;
       saveState();
-      // Con un bonus/malus attivo il voto finale cambia: ridisegna
-      if (getCheckBonus(selectedTest) !== 0) render();
+      // Con un bonus/malus attivo (generale o del singolo studente) il voto cambia
+      if (getStudentCheckBonusSetting(student, selectedTest) !== 0) render();
     });
     checkWrapper.appendChild(checkboxEl);
 
+    // Bonus/malus di QUESTO studente (piccola etichetta accanto alla spunta)
+    const studentBonus = getStudentCheckBonusSetting(student, selectedTest);
+    const hasOwnBonus = hasStudentOwnCheckBonus(student, selectedTest);
+    if (checkData.checked && studentBonus !== 0) {
+      const badge = document.createElement("span");
+      badge.className = "check-student-badge" + (studentBonus < 0 ? " is-malus" : "");
+      badge.textContent = formatCheckBonus(studentBonus);
+      checkWrapper.appendChild(badge);
+    }
+
+    // Nuvoletta al passaggio del mouse: il commento dello studente,
+    // oppure (se non c'è) l'etichetta della colonna
     const noteEl = document.createElement("div");
     noteEl.classList.add("check-note-input");
-    noteEl.textContent = selectedTest.checkboxLabel || "";
+    if (checkData.note) {
+      noteEl.textContent = checkData.note;
+    } else {
+      noteEl.textContent = selectedTest.checkboxLabel || "";
+      noteEl.dataset.usesLabel = "1";
+    }
     checkWrapper.appendChild(noteEl);
 
     addSectionPlaceholderTd.appendChild(checkWrapper);
+
+    // Triangolino della cella: scelta per questo studente + commento
+    const studentCheckTrigger = document.createElement("div");
+    studentCheckTrigger.className =
+      "check-student-trigger" +
+      (hasOwnBonus || checkData.note ? " is-custom" : "");
+    studentCheckTrigger.title = checkData.note
+      ? `${formatCheckBonus(studentBonus) || "Nessun cambio"} — ${checkData.note}`
+      : "Clicca per scegliere cosa fa la spunta a questo studente e scrivere un commento";
+    studentCheckTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (openCheckBonusMenu._el && openCheckBonusMenu._anchor === studentCheckTrigger) {
+        closeCheckBonusMenu();
+      } else {
+        openCheckBonusMenu(studentCheckTrigger, selectedTest, student);
+      }
+    });
+    addSectionPlaceholderTd.appendChild(studentCheckTrigger);
     row.appendChild(addSectionPlaceholderTd);
 
     const finalCell = document.createElement("td");
@@ -2710,9 +2745,6 @@ function attachHeaderCommentTrigger(cell, obj, key) {
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella.
  */
 function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
-  const key = subsectionId ?? "direct";
-  const existingComment = student.scores?.[testId]?.[sectionId]?.comments?.[key];
-
   const trigger = document.createElement("div");
   trigger.className = "comment-trigger";
   updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
@@ -3261,7 +3293,6 @@ function updateCellCommentIndicator(trigger, student, testId, sectionId, subsect
 }
 
 /** Aggiorna il commento della cella in base al voto appena inserito. */
-/** Aggiorna il commento della cella in base al voto appena inserito. */
 function applyRubricAutoComment(student, testId, sectionId, subsectionId, cell) {
   if (!subsectionId) return;
   const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
@@ -3283,6 +3314,7 @@ function applyRubricAutoComment(student, testId, sectionId, subsectionId, cell) 
   const trigger = cell?.querySelector(".comment-trigger");
   updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
 }
+
 function parseNumber(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
@@ -5152,6 +5184,7 @@ function computeParentSnapshotForStudent(student, selectedClass, selectedTest, d
           value: getStudentCheckBonus(student, selectedTest),
           text: formatCheckBonus(getStudentCheckBonus(student, selectedTest)),
           label: selectedTest.checkboxLabel || "",
+          note: student.checks?.[selectedTest.id]?.note || "",
         }
       : null,
     sections: sectionsOut,
@@ -5942,7 +5975,9 @@ function buildParentPreviewTestCard(test) {
     if (test.bonus && test.bonus.text) {
       const bonusEl = document.createElement("span");
       bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
-      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
+      bonusEl.textContent =
+        `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}` +
+        (test.bonus.note ? ` — ${test.bonus.note}` : "");
       finalWrap.appendChild(bonusEl);
     }
     card.appendChild(finalWrap);
@@ -6452,13 +6487,28 @@ function formatCheckBonus(n) {
   return (n > 0 ? "+" : "−") + body;
 }
 
+/** Lo studente ha una scelta sua (diversa da quella generale della verifica)? */
+function hasStudentOwnCheckBonus(student, test) {
+  const data = student?.checks?.[test?.id];
+  const own = parseNumber(data?.bonus);
+  return own !== null && isFinite(own);
+}
+
+/** Cosa fa la spunta a QUESTO studente: la sua scelta, altrimenti quella generale. */
+function getStudentCheckBonusSetting(student, test) {
+  if (!test) return 0;
+  if (hasStudentOwnCheckBonus(student, test)) {
+    return parseNumber(student.checks[test.id].bonus);
+  }
+  return getCheckBonus(test);
+}
+
 /** Bonus/malus realmente applicato a uno studente: vale solo se la spunta è attiva. */
 function getStudentCheckBonus(student, test) {
   if (!test) return 0;
-  const bonus = getCheckBonus(test);
-  if (!bonus) return 0;
   const data = student && student.checks && student.checks[test.id];
-  return data && data.checked ? bonus : 0;
+  if (!data || !data.checked) return 0;
+  return getStudentCheckBonusSetting(student, test);
 }
 
 /** Segna la cella FINAL (piccola etichetta +0.5 / −1 nell'angolo + tooltip). */
@@ -6476,13 +6526,16 @@ function markFinalCellBonus(finalCell, student, test) {
 
 function closeCheckBonusMenu() {
   const el = openCheckBonusMenu._el;
+  const onClose = openCheckBonusMenu._onClose;
   if (el) el.remove();
   openCheckBonusMenu._el = null;
   openCheckBonusMenu._anchor = null;
+  openCheckBonusMenu._onClose = null;
   document.removeEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.removeEventListener("keydown", onCheckBonusMenuKey, true);
-  window.removeEventListener("resize", closeCheckBonusMenu);
-  window.removeEventListener("scroll", closeCheckBonusMenu, true);
+  window.removeEventListener("resize", onCheckBonusMenuScrollOrResize);
+  window.removeEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
+  if (typeof onClose === "function") onClose();
 }
 
 function onCheckBonusMenuOutside(e) {
@@ -6497,6 +6550,17 @@ function onCheckBonusMenuKey(e) {
   if (e.key === "Escape") closeCheckBonusMenu();
 }
 
+/** Scroll/resize chiudono il menu, ma NON mentre scrivi il commento
+ *  (su tablet la tastiera che si apre fa un resize). */
+function onCheckBonusMenuScrollOrResize(e) {
+  const el = openCheckBonusMenu._el;
+  if (!el) return;
+  if (e && e.target && e.target !== window && e.target !== document && el.contains(e.target)) return;
+  if (el.contains(document.activeElement)) return;
+  closeCheckBonusMenu();
+}
+
+/** Scelta generale della verifica (clessidra in intestazione). */
 function applyCheckBonus(testId, value) {
   const test = state.tests.find((t) => t.id === testId);
   if (!test) return;
@@ -6506,18 +6570,38 @@ function applyCheckBonus(testId, value) {
   render();
 }
 
-/** Piccolo menu sotto la clessidra: scegli cosa succede al voto quando c'è la spunta. */
-function openCheckBonusMenu(anchor, test) {
+/** Scelta del singolo studente. value = null → torna alla scelta generale. */
+function applyStudentCheckBonus(student, testId, value) {
+  if (!student.checks) student.checks = {};
+  if (!student.checks[testId]) student.checks[testId] = { checked: false, note: "" };
+  student.checks[testId].bonus = value;
+  saveState();
   closeCheckBonusMenu();
-  const current = getCheckBonus(test);
+  render();
+}
+
+/**
+ * Menu della spunta.
+ * - Senza studente: scelta generale per tutta la verifica (clessidra).
+ * - Con studente: scelta solo per lui/lei + spazio per il commento.
+ */
+function openCheckBonusMenu(anchor, test, student = null) {
+  closeCheckBonusMenu();
+  const isStudentMenu = Boolean(student);
+  const generalBonus = getCheckBonus(test);
+  const current = isStudentMenu ? getStudentCheckBonusSetting(student, test) : generalBonus;
+  const apply = (value) =>
+    isStudentMenu ? applyStudentCheckBonus(student, test.id, value) : applyCheckBonus(test.id, value);
 
   const menu = document.createElement("div");
-  menu.className = "check-bonus-menu";
+  menu.className = "check-bonus-menu" + (isStudentMenu ? " is-student" : "");
   menu.setAttribute("role", "dialog");
 
   const title = document.createElement("div");
   title.className = "check-bonus-menu-title";
-  title.textContent = "Con la spunta il voto cambia di…";
+  title.textContent = isStudentMenu
+    ? `${student.name || "Studente"}: con la spunta il voto cambia di…`
+    : "Con la spunta il voto cambia di… (per tutti)";
   menu.appendChild(title);
 
   const grid = document.createElement("div");
@@ -6527,7 +6611,7 @@ function openCheckBonusMenu(anchor, test) {
     btn.type = "button";
     btn.className = "check-bonus-opt " + (value > 0 ? "is-bonus" : "is-malus") + (value === current ? " selected" : "");
     btn.textContent = formatCheckBonus(value);
-    btn.addEventListener("click", () => applyCheckBonus(test.id, value));
+    btn.addEventListener("click", () => apply(value));
     grid.appendChild(btn);
   });
   menu.appendChild(grid);
@@ -6536,8 +6620,18 @@ function openCheckBonusMenu(anchor, test) {
   noneBtn.type = "button";
   noneBtn.className = "check-bonus-opt is-none" + (current === 0 ? " selected" : "");
   noneBtn.textContent = "Non cambia (solo spunta)";
-  noneBtn.addEventListener("click", () => applyCheckBonus(test.id, 0));
+  noneBtn.addEventListener("click", () => apply(0));
   menu.appendChild(noneBtn);
+
+  // Studente con scelta propria: pulsante per tornare a quella generale
+  if (isStudentMenu && hasStudentOwnCheckBonus(student, test)) {
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.className = "check-bonus-reset";
+    resetBtn.textContent = `↺ Come gli altri (${formatCheckBonus(generalBonus) || "non cambia"})`;
+    resetBtn.addEventListener("click", () => apply(null));
+    menu.appendChild(resetBtn);
+  }
 
   const customRow = document.createElement("div");
   customRow.className = "check-bonus-custom";
@@ -6556,7 +6650,7 @@ function openCheckBonusMenu(anchor, test) {
   const applyCustom = () => {
     const n = parseNumber(customInput.value);
     if (n === null || !isFinite(n)) { customInput.focus(); return; }
-    applyCheckBonus(test.id, Math.max(-10, Math.min(10, n)));
+    apply(Math.max(-10, Math.min(10, n)));
   };
   customOk.addEventListener("click", applyCustom);
   customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyCustom(); } });
@@ -6565,14 +6659,45 @@ function openCheckBonusMenu(anchor, test) {
   customRow.appendChild(customOk);
   menu.appendChild(customRow);
 
-  const note = document.createElement("div");
-  note.className = "check-bonus-menu-note";
-  note.textContent = "Se non scegli nulla, la spunta non cambia il voto. Il voto resta sempre tra 0 e 10.";
-  menu.appendChild(note);
+  if (isStudentMenu) {
+    // Spazio per il commento (al posto della nota informativa)
+    if (!student.checks) student.checks = {};
+    if (!student.checks[test.id]) student.checks[test.id] = { checked: false, note: "" };
+    const checkData = student.checks[test.id];
+    const originalNote = checkData.note || "";
+
+    const commentLabel = document.createElement("label");
+    commentLabel.className = "check-bonus-comment-label";
+    commentLabel.textContent = "💬 Commento";
+    const commentBox = document.createElement("textarea");
+    commentBox.className = "check-bonus-comment";
+    commentBox.rows = 2;
+    commentBox.placeholder = "es. mezzo voto in meno perché hai consegnato con 1 giorno di ritardo";
+    commentBox.value = originalNote;
+    commentBox.addEventListener("input", (e) => {
+      checkData.note = e.target.value;
+    });
+    commentLabel.appendChild(commentBox);
+    menu.appendChild(commentLabel);
+
+    // Il commento si salva quando il menu si chiude (clic fuori, Esc o una scelta)
+    openCheckBonusMenu._onClose = () => {
+      checkData.note = (checkData.note || "").trim();
+      if (checkData.note !== originalNote) {
+        saveState();
+        render();
+      }
+    };
+  } else {
+    const note = document.createElement("div");
+    note.className = "check-bonus-menu-note";
+    note.textContent = "Vale per tutti. Puoi cambiarlo per un singolo studente dal triangolino nella sua cella. Il voto resta sempre tra 0 e 10.";
+    menu.appendChild(note);
+  }
 
   document.body.appendChild(menu);
 
-  // Posizione: sotto la clessidra, dentro lo schermo
+  // Posizione: sotto il triangolino, dentro lo schermo
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -6587,8 +6712,8 @@ function openCheckBonusMenu(anchor, test) {
   openCheckBonusMenu._anchor = anchor;
   document.addEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.addEventListener("keydown", onCheckBonusMenuKey, true);
-  window.addEventListener("resize", closeCheckBonusMenu);
-  window.addEventListener("scroll", closeCheckBonusMenu, true);
+  window.addEventListener("resize", onCheckBonusMenuScrollOrResize);
+  window.addEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
 }
 
 // ── "Facilitata" per singola verifica ────────────────────────────────

@@ -2970,6 +2970,11 @@ h1, h2, h3 {
   box-shadow: 0 0 0 2.5px var(--pastel-pink);
 }
 
+/* Copia testuale dei giudizi: nascosta a schermo, usata solo in stampa */
+.rubric-print-text {
+  display: none;
+}
+
 .rubric-table td.rubric-cell-disabled {
   background: repeating-linear-gradient(
     45deg,
@@ -2979,11 +2984,6 @@ h1, h2, h3 {
     rgba(0, 0, 0, 0.05) 12px
   );
   color: #bbb;
-}
-
-/* Copia testuale dei giudizi: nascosta a schermo, usata solo in stampa */
-.rubric-print-text {
-  display: none;
 }
 
 /* ── Stampa: nasconde tutta la pagina e mostra solo #rubricPrintArea ──
@@ -3003,7 +3003,6 @@ h1, h2, h3 {
     left: 0;
     width: 100%;
   }
-
   /* Niente scroll orizzontale: la tabella si adatta al foglio */
   body.printing-rubric #rubricPrintArea .table-wrapper {
     overflow: visible !important;
@@ -3040,8 +3039,9 @@ h1, h2, h3 {
     vertical-align: middle;
   }
 
-  /* Input nascosti, al loro posto il testo che va a capo */
-  body.printing-rubric .rubric-table input {
+  /* Input e textarea nascosti, al loro posto il testo che va a capo */
+  body.printing-rubric .rubric-table input,
+  body.printing-rubric .rubric-table textarea {
     display: none !important;
   }
   body.printing-rubric .rubric-print-text {
@@ -3081,10 +3081,6 @@ h1, h2, h3 {
   }
   body.printing-rubric .subsection-remove,
   body.printing-rubric .section-add-btn {
-    display: none !important;
-  }
-    body.printing-rubric .rubric-table input,
-  body.printing-rubric .rubric-table textarea {
     display: none !important;
   }
 }
@@ -3319,4 +3315,111 @@ h1, h2, h3 {
 .parent-final-bonus.is-malus {
   background: var(--emozioni-100);
   color: #8a2a22;
+}
+
+/* ── Spunta: scelta per singolo studente ── */
+.add-section-col-td {
+  position: relative;
+}
+
+.check-student-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.check-student-trigger::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 9px 9px 0;
+  border-color: transparent rgba(85, 105, 159, 0.25) transparent transparent;
+  transform-origin: top right;
+  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.check-student-trigger:hover::after {
+  transform: scale(1.35);
+  border-right-color: rgba(85, 105, 159, 0.6);
+}
+
+/* Rosso: lo studente ha una scelta sua o un commento */
+.check-student-trigger.is-custom::after {
+  border-color: transparent var(--verybad) transparent transparent;
+}
+
+.check-student-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: var(--good-bg);
+  color: var(--goodgrade);
+}
+.check-student-badge.is-malus {
+  background: var(--bad-bg);
+  color: var(--verybad);
+}
+
+/* La nuvoletta ora può contenere un commento lungo */
+.check-note-input {
+  white-space: normal;
+  max-width: 220px;
+  text-align: left;
+}
+
+/* Menu per singolo studente */
+.check-bonus-menu.is-student {
+  width: 260px;
+}
+
+.check-bonus-reset {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--glaucous);
+  background: transparent;
+  color: var(--glaucous-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check-bonus-reset:hover {
+  background: #f0f2fa;
+}
+
+.check-bonus-comment-label {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--glaucous-dark);
+}
+
+.check-bonus-comment {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  min-height: 56px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1.5px solid #ddd;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  resize: vertical;
+}
+.check-bonus-comment:focus {
+  outline: none;
+  border-color: var(--glaucous);
 }
