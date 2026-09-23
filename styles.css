@@ -2936,9 +2936,38 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
-.rubric-table td.rubric-cell input {
-  text-align: left;
+.rubric-table td.rubric-cell {
+  vertical-align: top;
+}
+
+.rubric-table td.rubric-cell textarea.rubric-textarea {
+  display: block;
+  width: 100%;
   min-width: 150px;
+  min-height: 26px;
+  resize: none;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.35;
+  padding: 3px 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.rubric-table td.rubric-cell textarea.rubric-textarea:hover {
+  background: rgba(109, 134, 200, 0.06);
+}
+
+.rubric-table td.rubric-cell textarea.rubric-textarea:focus {
+  outline: none;
+  background: var(--white);
+  box-shadow: 0 0 0 2.5px var(--pastel-pink);
 }
 
 .rubric-table td.rubric-cell-disabled {
@@ -3052,6 +3081,10 @@ h1, h2, h3 {
   }
   body.printing-rubric .subsection-remove,
   body.printing-rubric .section-add-btn {
+    display: none !important;
+  }
+    body.printing-rubric .rubric-table input,
+  body.printing-rubric .rubric-table textarea {
     display: none !important;
   }
 }

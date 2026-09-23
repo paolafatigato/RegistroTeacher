@@ -3126,10 +3126,22 @@ function renderRubricGrid() {
           if (!sub.rubric || typeof sub.rubric !== "object") {
             sub.rubric = {};
           }
-          const input = document.createElement("input");
-          input.type = "text";
+          // Textarea al posto dell'input: così i giudizi lunghi vanno a capo
+          const input = document.createElement("textarea");
+          input.rows = 1;
+          input.classList.add("rubric-textarea");
           input.placeholder = "Giudizio…";
           input.value = sub.rubric[voteValue] ?? "";
+
+          // Copia testuale del giudizio: visibile solo in stampa
+          const printText = document.createElement("div");
+          printText.className = "rubric-print-text";
+          printText.textContent = input.value;
+
+          input.addEventListener("input", (e) => {
+            autoResizeRubricTextarea(e.target);
+            printText.textContent = e.target.value;
+          });
           input.addEventListener("change", (e) => {
             const val = e.target.value;
             if (val.trim()) {
@@ -3140,16 +3152,8 @@ function renderRubricGrid() {
             saveState();
           });
           td.appendChild(input);
-
-          // Copia testuale del giudizio: visibile solo in stampa (va a capo)
-          const printText = document.createElement("div");
-          printText.className = "rubric-print-text";
-          printText.textContent = input.value;
-          input.addEventListener("input", (e) => {
-            printText.textContent = e.target.value;
-          });
           td.appendChild(printText);
-                }
+        }
         row.appendChild(td);
       });
     });
@@ -3157,7 +3161,28 @@ function renderRubricGrid() {
     tbody.appendChild(row);
   }
   rubricTable.appendChild(tbody);
+    // Altezza iniziale delle textarea (serve che siano già nel DOM)
+  requestAnimationFrame(resizeAllRubricTextareas);
 }
+
+/** Adatta l'altezza della textarea al suo contenuto. */
+function autoResizeRubricTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+
+function resizeAllRubricTextareas() {
+  if (!rubricTable) return;
+  rubricTable.querySelectorAll("textarea.rubric-textarea").forEach(autoResizeRubricTextarea);
+}
+
+// Se la finestra cambia larghezza, le righe vanno a capo diversamente
+window.addEventListener("resize", () => {
+  if (rubricView && rubricView.classList.contains("active")) {
+    resizeAllRubricTextareas();
+  }
+});
 
 function parseNumber(value) {
   if (value === "" || value === null || value === undefined) {
