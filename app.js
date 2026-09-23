@@ -651,8 +651,13 @@ function init() {
       if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
       student.scores[testId][sectionId].comments[key] = text || null;
     }
-    trigger.classList.toggle("has-comment", Boolean(text));
-    trigger.title = text || "Aggiungi commento";
+    if (commentModalContext.type === "header") {
+      trigger.classList.toggle("has-comment", Boolean(text));
+      trigger.title = text || "Aggiungi commento";
+    } else {
+      const { student, testId, sectionId, subsectionId } = commentModalContext;
+      updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
+    }
     // If this is a header trigger, also mark the TH so we can style the whole cell
     if (commentModalContext.type === "header") {
       const th = trigger.closest("th");
@@ -2553,6 +2558,10 @@ function createScoreInput(
     }
     // Aggiorna la cella FINAL della riga in-place, senza toccare il DOM dell'input attivo
     updateFinalCellInRow(input, student, getSelectedTest());
+    // Commento precompilato dalla Griglia di valutazione (solo sottosezioni)
+    if (type === "subsection") {
+      applyRubricAutoComment(student, testId, sectionId, subsectionId, input.parentElement);
+    }
   });
 
   // Navigazione tra celle con frecce della tastiera
@@ -2706,12 +2715,7 @@ function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
 
   const trigger = document.createElement("div");
   trigger.className = "comment-trigger";
-  if (existingComment) {
-    trigger.classList.add("has-comment");
-    trigger.title = existingComment;
-  } else {
-    trigger.title = "Aggiungi commento";
-  }
+  updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
 
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2727,7 +2731,14 @@ function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
 function openCommentModal(student, testId, sectionId, subsectionId, trigger) {
   commentModalContext = { student, testId, sectionId, subsectionId, trigger };
   const key = subsectionId ?? "direct";
-  const existing = student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "";
+  let existing = student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "";
+  // Commento vuoto ma voto già inserito (es. voti messi prima di compilare
+  // la griglia): propone il giudizio corrispondente, modificabile.
+  if (!existing && subsectionId) {
+    const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
+    const score = parseNumber(student.scores?.[testId]?.[sectionId]?.subsections?.[subsectionId]);
+    existing = getRubricJudgmentForScore(sub, score);
+  }
   document.getElementById("commentTextarea").value = existing;
   document.getElementById("commentDialog").showModal();
   document.getElementById("commentTextarea").focus();
@@ -3081,6 +3092,7 @@ function renderRubricGrid() {
         subNamePrint.textContent = e.target.value;
       });
       subWrap.appendChild(subNamePrint);
+
       const maxBadge = document.createElement("span");
       maxBadge.className = "rubric-max-badge";
       maxBadge.textContent = `/${getSubsectionMax(section, sub, fallbackPerSub)}`;
@@ -3161,7 +3173,8 @@ function renderRubricGrid() {
     tbody.appendChild(row);
   }
   rubricTable.appendChild(tbody);
-    // Altezza iniziale delle textarea (serve che siano già nel DOM)
+
+  // Altezza iniziale delle textarea (serve che siano già nel DOM)
   requestAnimationFrame(resizeAllRubricTextareas);
 }
 
@@ -3184,6 +3197,92 @@ window.addEventListener("resize", () => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
+//  COMMENTO PRECOMPILATO DALLA GRIGLIA
+//  Quando si inserisce un voto in una sottosezione, il commento della
+//  cella viene precompilato con il giudizio della Griglia di valutazione
+//  corrispondente al voto ARROTONDATO PER ECCESSO (4.5 → riga 5).
+//  Se nella griglia quella riga è vuota, il commento resta vuoto.
+//  Un commento scritto/modificato a mano non viene mai sovrascritto.
+// ─────────────────────────────────────────────────────────────
+
+/** Trova la sottosezione (con la sua griglia) nella versione di verifica
+ *  assegnata a questo studente. */
+function findRubricSubsectionForStudent(student, testId, sectionId, subsectionId) {
+  const test = state.tests.find((t) => t.id === testId);
+  if (!test) return null;
+  const version =
+    getVersionById(test, getStudentVersionId(student, testId, getDefaultVersion(test)?.id)) ??
+    getDefaultVersion(test);
+  const section = (version?.sections ?? []).find((s) => s.id === sectionId);
+  if (!section) return null;
+  return (section.subsections ?? []).find((sub) => sub.id === subsectionId) ?? null;
+}
+
+/** Giudizio della griglia per un voto, arrotondato per eccesso. "" se non c'è. */
+function getRubricJudgmentForScore(sub, score) {
+  if (!sub || !sub.rubric || typeof sub.rubric !== "object") return "";
+  if (score === null || score === undefined || Number.isNaN(score)) return "";
+  // Arrotondo prima ai centesimi per evitare errori tipo 4.0000001 → 5
+  const rowKey = Math.ceil(Math.round(score * 100) / 100);
+  const judgment = sub.rubric[rowKey];
+  return typeof judgment === "string" ? judgment.trim() : "";
+}
+
+/** Il commento attuale è "automatico"? Sì se è vuoto oppure identico a uno
+ *  dei giudizi della griglia di questa colonna (cioè non è stato personalizzato). */
+function isAutoRubricComment(sub, comment) {
+  const current = (comment ?? "").trim();
+  if (!current) return true;
+  if (!sub || !sub.rubric || typeof sub.rubric !== "object") return false;
+  return Object.values(sub.rubric).some(
+    (val) => typeof val === "string" && val.trim() === current
+  );
+}
+
+/** Il triangolino rosso compare solo se il commento è stato personalizzato,
+ *  cioè è diverso dal giudizio della griglia per il voto attuale. */
+function updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId) {
+  if (!trigger) return;
+  const key = subsectionId ?? "direct";
+  const comment = (student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "").trim();
+
+  let isCustom = Boolean(comment);
+  if (comment && subsectionId) {
+    const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
+    const score = parseNumber(student.scores?.[testId]?.[sectionId]?.subsections?.[subsectionId]);
+    const judgment = getRubricJudgmentForScore(sub, score);
+    isCustom = comment !== judgment;
+  }
+
+  trigger.classList.toggle("has-comment", isCustom);
+  // Il testo resta leggibile al passaggio del mouse anche se è quello automatico
+  trigger.title = comment || "Aggiungi commento";
+}
+
+/** Aggiorna il commento della cella in base al voto appena inserito. */
+/** Aggiorna il commento della cella in base al voto appena inserito. */
+function applyRubricAutoComment(student, testId, sectionId, subsectionId, cell) {
+  if (!subsectionId) return;
+  const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
+  if (!sub) return;
+
+  ensureScoreStore(student, testId, sectionId);
+  const store = student.scores[testId][sectionId];
+  if (!store.comments) store.comments = {};
+
+  const currentComment = store.comments[subsectionId];
+  if (isAutoRubricComment(sub, currentComment)) {
+    const score = parseNumber(store.subsections[subsectionId]);
+    const judgment = getRubricJudgmentForScore(sub, score);
+    store.comments[subsectionId] = judgment || null;
+  }
+  // Commento personalizzato: il testo non si tocca, ma l'indicatore va
+  // ricalcolato (il voto è cambiato)
+
+  const trigger = cell?.querySelector(".comment-trigger");
+  updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
+}
 function parseNumber(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
@@ -4671,7 +4770,12 @@ function collectRubricJudgmentsText(student, testId) {
       const score = parseNumber(rawScore);
       if (score === null || score === undefined) return;
       const judgment = sub.rubric[score];
-      if (judgment) lines.push(`${section.name} — ${sub.name}: ${judgment}`);
+      // Se il commento della cella è già questo giudizio (precompilato),
+      // è già incluso nei commenti di Valutazione: evito il doppione.
+      const cellComment = (sectionScores.comments?.[sub.id] ?? "").trim();
+      if (judgment && judgment.trim() !== cellComment) {
+        lines.push(`${section.name} — ${sub.name}: ${judgment}`);
+      }
     });
   });
   return lines.join("\n");
