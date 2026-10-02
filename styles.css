@@ -502,6 +502,19 @@ h1, h2, h3 {
 .subheader-cell {
 }
 
+.subsection-category-badge {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--pastel-pink);
+  color: var(--glaucous-dark);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
 /* Overlay buttons above header text to avoid layout shift */
 /* Overlay header buttons: absolute within the TH (thead th is positioning context) */
 .section-header-cell .btn,

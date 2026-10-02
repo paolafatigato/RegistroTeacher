@@ -89,11 +89,14 @@ const STORAGE_KEY = "teacher-grading-data-v1";
 // Nota: le classi NON sono in defaultData perché arrivano da Firebase.
 // Se Firebase non è connesso o l'utente non è autenticato,
 // lo stato partirà con classes = [].
+const DEFAULT_SUBSECTION_CATEGORIES = ["Grammatica", "Lessico", "Performance", "Creatività", "Memoria", "Altro"];
+
 const defaultData = {
   classes: [],
   settings: {
     subjects: [],    // array di stringhe – materie salvate
     categories: [],  // array di stringhe – categorie salvate
+    subsectionCategories: [...DEFAULT_SUBSECTION_CATEGORIES], // competenze per le subsection (menu a tendina)
     classColors: {}, // { classId: "#hexcolor" }
   },
   tests: [
@@ -539,6 +542,7 @@ function init() {
       const target = tab.dataset.tab;
       testsSettingsDialog.querySelector("#settingsTabSubjects").style.display    = target === "subjects"    ? "" : "none";
       testsSettingsDialog.querySelector("#settingsTabCategories").style.display  = target === "categories"  ? "" : "none";
+      testsSettingsDialog.querySelector("#settingsTabCompetencies").style.display = target === "competencies" ? "" : "none";
       testsSettingsDialog.querySelector("#settingsTabClassColors").style.display = target === "classcolors" ? "" : "none";
     });
   });
@@ -633,9 +637,15 @@ function init() {
     if (!commentModalContext) return;
     const { trigger } = commentModalContext;
     const text = commentTextarea.value.trim();
+    let categoryChanged = false;
     if (commentModalContext.type === "header") {
-      const { obj, key } = commentModalContext;
+      const { obj, key, isSubsectionCategory } = commentModalContext;
       obj[key] = text || null;
+      if (isSubsectionCategory) {
+        const newCategory = document.getElementById("commentCategorySelect").value;
+        categoryChanged = obj.category !== newCategory;
+        obj.category = newCategory;
+      }
     } else {
       const { student, testId, sectionId, subsectionId } = commentModalContext;
       const key = subsectionId ?? "direct";
@@ -652,6 +662,9 @@ function init() {
     }
     saveState();
     commentDialog.close();
+    // La categoria è mostrata come badge nell'intestazione: ridisegna la
+    // tabella solo se è davvero cambiata, per non ricostruirla a ogni commento.
+    if (categoryChanged) renderTestTable();
   });
 
   commentDeleteBtn.addEventListener("click", () => {
@@ -1518,7 +1531,7 @@ function renderConfig() {
 // ============================================================
 function renderSettingsDialog() {
   if (!state.settings) {
-    state.settings = { subjects: [], categories: [], classColors: {} };
+    state.settings = { subjects: [], categories: [], subsectionCategories: [...DEFAULT_SUBSECTION_CATEGORIES], classColors: {} };
   }
 
   // ── Materie ──────────────────────────────────────────────
@@ -1611,6 +1624,53 @@ function renderSettingsDialog() {
   document.getElementById("newCategoryInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCategory(); } });
   document.getElementById("addCategoryBtn").addEventListener("click", doAddCategory);
   renderCategoriesList();
+
+  // ── Competenze (categorie delle subsection) ────────────────
+  if (!Array.isArray(state.settings.subsectionCategories)) {
+    state.settings.subsectionCategories = [...DEFAULT_SUBSECTION_CATEGORIES];
+  }
+  const competenciesList = document.getElementById("competenciesList");
+  const newCompetencyInput = document.getElementById("newCompetencyInput");
+  const addCompetencyBtn = document.getElementById("addCompetencyBtn");
+
+  function renderCompetenciesList() {
+    competenciesList.innerHTML = "";
+    state.settings.subsectionCategories.forEach((c, i) => {
+      const li = document.createElement("li");
+      li.className = "settings-list-item";
+      const span = document.createElement("span");
+      span.textContent = c;
+      const del = document.createElement("button");
+      del.className = "icon-btn settings-list-remove";
+      del.textContent = "×";
+      del.title = "Rimuovi (le subsection già taggate con questa competenza la mantengono comunque)";
+      del.addEventListener("click", () => {
+        state.settings.subsectionCategories.splice(i, 1);
+        saveState();
+        renderCompetenciesList();
+        renderTestTable();
+      });
+      li.appendChild(span);
+      li.appendChild(del);
+      competenciesList.appendChild(li);
+    });
+  }
+
+  const doAddCompetency = () => {
+    const val = newCompetencyInput.value.trim();
+    if (!val || state.settings.subsectionCategories.includes(val)) return;
+    state.settings.subsectionCategories.push(val);
+    newCompetencyInput.value = "";
+    saveState();
+    renderCompetenciesList();
+  };
+  const newCompetencyInputClone = newCompetencyInput.cloneNode(true);
+  newCompetencyInput.replaceWith(newCompetencyInputClone);
+  const addCompetencyBtnClone = addCompetencyBtn.cloneNode(true);
+  addCompetencyBtn.replaceWith(addCompetencyBtnClone);
+  document.getElementById("newCompetencyInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCompetency(); } });
+  document.getElementById("addCompetencyBtn").addEventListener("click", doAddCompetency);
+  renderCompetenciesList();
 
   // ── Colori classi ─────────────────────────────────────────
   const classColorsList = document.getElementById("classColorsList");
@@ -1809,6 +1869,7 @@ function renderSections(version) {
     });
 
     card.querySelector(".remove-section").addEventListener("click", () => {
+      if (!confirm(`Eliminare la sezione "${section.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti in questa sezione, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
       version.sections = version.sections.filter((item) => item.id !== section.id);
       removeSectionScores(section.id, getSelectedTest()?.id);
       saveState();
@@ -1831,7 +1892,7 @@ function renderSections(version) {
       const subWeightInput = subRow.querySelector(".subsection-weight");
       const subMaxInput = subRow.querySelector(".subsection-max");
       subNameInput.value = subsection.name;
-      subCategoryInput.value = subsection.category ?? "";
+      populateCategorySelect(subCategoryInput, subsection.category ?? "");
       subWeightInput.value = subsection.weight ?? "";
       subMaxInput.value = subsection.max ?? "";
 
@@ -1862,6 +1923,7 @@ function renderSections(version) {
       });
 
       subRow.querySelector(".remove-subsection").addEventListener("click", () => {
+        if (!confirm(`Eliminare la subsection "${subsection.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti qui, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
         section.subsections = section.subsections.filter(
           (item) => item.id !== subsection.id
         );
@@ -2079,7 +2141,9 @@ function renderTestTable() {
       removeBtn.type = "button";
       removeBtn.classList.add("subsection-remove");
       removeBtn.textContent = "×";
+      removeBtn.title = "Elimina questa subsection e tutti i voti associati";
       removeBtn.addEventListener("click", () => {
+        if (!confirm(`Sei sicuro di voler eliminare la subsection "${subsection.name || "senza nome"}"? Tutti i voti già inseriti qui andranno persi per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
         section.subsections = section.subsections.filter(
           (item) => item.id !== subsection.id
         );
@@ -2089,8 +2153,15 @@ function renderTestTable() {
       });
       subHeaderWrap.appendChild(removeBtn);
 
+      if (subsection.category) {
+        const catBadge = document.createElement("span");
+        catBadge.classList.add("subsection-category-badge");
+        catBadge.textContent = subsection.category;
+        subHeaderWrap.appendChild(catBadge);
+      }
+
       subTh.appendChild(subHeaderWrap);
-      attachHeaderCommentTrigger(subTh, subsection, "comment");
+      attachHeaderCommentTrigger(subTh, subsection, "comment", true);
       subHeaderRow.appendChild(subTh);
 
       const weightTh = document.createElement("th");
@@ -2680,7 +2751,7 @@ function createScoreInput(
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella di intestazione
  * (section, subsection, peso, punteggio massimo). Salva il commento su obj[key].
  */
-function attachHeaderCommentTrigger(cell, obj, key) {
+function attachHeaderCommentTrigger(cell, obj, key, isSubsectionCategory = false) {
   const existingComment = obj[key];
 
   const trigger = document.createElement("div");
@@ -2696,8 +2767,16 @@ function attachHeaderCommentTrigger(cell, obj, key) {
 
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
-    commentModalContext = { type: "header", obj, key, trigger };
+    commentModalContext = { type: "header", obj, key, trigger, isSubsectionCategory };
     document.getElementById("commentTextarea").value = obj[key] || "";
+    const categoryField = document.getElementById("commentCategoryField");
+    const categorySelect = document.getElementById("commentCategorySelect");
+    if (isSubsectionCategory) {
+      categoryField.style.display = "";
+      populateCategorySelect(categorySelect, obj.category || "");
+    } else {
+      categoryField.style.display = "none";
+    }
     document.getElementById("commentDialog").showModal();
     document.getElementById("commentTextarea").focus();
   });
@@ -3327,6 +3406,31 @@ function createSection(letter = "A") {
     max: 10,
     subsections: [createSubsection(null, `${letter}1`)],
   };
+}
+
+// Ricostruisce le <option> di un <select> di competenza dalla lista
+// personalizzabile in Impostazioni (state.settings.subsectionCategories),
+// più "—" per "nessuna". Se il valore attuale non è più nella lista (perché
+// rimosso dalle Impostazioni dopo essere stato usato), lo tiene comunque
+// come opzione finché non viene cambiato manualmente, così non si perde
+// silenziosamente la categorizzazione già fatta.
+function populateCategorySelect(selectEl, currentValue) {
+  const options = Array.isArray(state.settings?.subsectionCategories)
+    ? [...state.settings.subsectionCategories]
+    : [...DEFAULT_SUBSECTION_CATEGORIES];
+  if (currentValue && !options.includes(currentValue)) options.push(currentValue);
+  selectEl.innerHTML = "";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "—";
+  selectEl.appendChild(noneOpt);
+  options.forEach((opt) => {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    selectEl.appendChild(o);
+  });
+  selectEl.value = currentValue || "";
 }
 
 function createSubsection(base = null, name = null) {
@@ -4054,6 +4158,7 @@ function loadState() {
       settings: {
         subjects:    Array.isArray(parsed.settings?.subjects)    ? parsed.settings.subjects    : [],
         categories:  Array.isArray(parsed.settings?.categories)  ? parsed.settings.categories  : [],
+        subsectionCategories: Array.isArray(parsed.settings?.subsectionCategories) ? parsed.settings.subsectionCategories : [...DEFAULT_SUBSECTION_CATEGORIES],
         classColors: (parsed.settings?.classColors && typeof parsed.settings.classColors === 'object') ? parsed.settings.classColors : {},
       },
       tests,
@@ -6334,7 +6439,7 @@ function getClassColor(classId) {
 function syncClassColorsFromGrading(settings) {
   const incoming = settings && settings.classColors;
   if (!incoming || typeof incoming !== "object") return false;
-  if (!state.settings) state.settings = { subjects: [], categories: [], classColors: {} };
+  if (!state.settings) state.settings = { subjects: [], categories: [], subsectionCategories: [...DEFAULT_SUBSECTION_CATEGORIES], classColors: {} };
   const current = state.settings.classColors || {};
   const keys = new Set([...Object.keys(current), ...Object.keys(incoming)]);
   let changed = false;

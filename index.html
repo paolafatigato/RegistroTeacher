@@ -113,6 +113,7 @@
         <div class="settings-tabs">
           <button class="settings-tab active" data-tab="subjects">Materie</button>
           <button class="settings-tab" data-tab="categories">Categorie</button>
+          <button class="settings-tab" data-tab="competencies">Competenze</button>
           <button class="settings-tab" data-tab="classcolors">Colori classi</button>
         </div>
         <div class="settings-tab-content" id="settingsTabSubjects">
@@ -130,6 +131,14 @@
             <button id="addCategoryBtn" class="btn btn-primary btn-small">+ Aggiungi</button>
           </div>
           <ul id="categoriesList" class="settings-list"></ul>
+        </div>
+        <div class="settings-tab-content" id="settingsTabCompetencies" style="display:none;">
+          <p class="settings-hint">Queste sono le competenze tra cui scegliere nel menu a tendina di ogni subsection (e nella finestrella del commento). Compaiono anche in Panoramica Prof come raggruppamento dei voti medi.</p>
+          <div class="settings-add-row">
+            <input id="newCompetencyInput" type="text" placeholder="Aggiungi competenza…" />
+            <button id="addCompetencyBtn" class="btn btn-primary btn-small">+ Aggiungi</button>
+          </div>
+          <ul id="competenciesList" class="settings-list"></ul>
         </div>
         <div class="settings-tab-content" id="settingsTabClassColors" style="display:none;">
           <p class="settings-hint">Assegna un colore a ogni classe. Le verifiche mostreranno il colore della classe a cui appartengono.</p>
@@ -302,6 +311,12 @@
   <dialog id="commentDialog">
     <div class="comment-dialog-inner">
       <h3>Commento</h3>
+      <div class="field" id="commentCategoryField" style="display:none;">
+        <label for="commentCategorySelect">Competenza</label>
+        <select id="commentCategorySelect">
+          <option value="">—</option>
+        </select>
+      </div>
       <textarea id="commentTextarea" rows="4" placeholder="Scrivi un commento per questa cella…"></textarea>
       <div class="comment-dialog-actions">
         <button id="commentCancelBtn" class="btn btn-secondary">Annulla</button>
@@ -337,6 +352,12 @@
       <div class="field">
         <label>Subsection Name</label>
         <input type="text" class="subsection-name" placeholder="e.g., Exercise 1" />
+      </div>
+      <div class="field small">
+        <label>Competenza</label>
+        <select class="subsection-category">
+          <option value="">—</option>
+        </select>
       </div>
       <div class="field small">
         <label>Weight</label>
