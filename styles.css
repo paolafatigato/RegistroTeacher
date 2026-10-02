@@ -88,6 +88,7 @@ h1, h2, h3 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
 }
 
 .nav-actions {
@@ -101,6 +102,7 @@ h1, h2, h3 {
   font-weight: 700;
   letter-spacing: 0.2px;
   font-size: 22px;
+  min-width: 0;
 }
 
 .nav-actions .btn-secondary {
@@ -314,14 +316,18 @@ h1, h2, h3 {
   color: var(--glaucous-dark);
 }
 
-.field input {
+.field input,
+.field select {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #d0d0d0;
   font-size: 14px;
+  font-family: inherit;
+  background: var(--white, #fff);
 }
 
-.field.small input {
+.field.small input,
+.field.small select {
   max-width: 140px;
 }
 
@@ -1145,6 +1151,63 @@ h1, h2, h3 {
 }
 
 @media (max-width: 960px) {
+  /* Header compatto: la barra dei pulsanti scorre in orizzontale invece di
+     impilarsi, così l'header non cresce mai in altezza qualunque sia il
+     numero di pulsanti (compreso quello di accesso Google). */
+  .app-header {
+    padding: 14px 16px;
+    position: sticky;
+  }
+
+  .header-content {
+    gap: 8px;
+  }
+
+  .header-top {
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .header-content h1 {
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+  }
+
+  .nav-actions {
+    flex-wrap: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .nav-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-actions > * {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .nav-actions .btn {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  #firebaseAuthArea #userInfo {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
   .section-header {
     grid-template-columns: 1fr;
   }
@@ -1153,7 +1216,6 @@ h1, h2, h3 {
     max-width: 100%;
   }
 
-  .nav-actions,
   .panel-actions,
   .bulk-students {
     flex-direction: column;
@@ -1542,6 +1604,7 @@ h1, h2, h3 {
 .archived-test-row-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -2936,43 +2999,9 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
-.rubric-table td.rubric-cell {
-  vertical-align: top;
-}
-
-.rubric-table td.rubric-cell textarea.rubric-textarea {
-  display: block;
-  width: 100%;
-  min-width: 150px;
-  min-height: 26px;
-  resize: none;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
+.rubric-table td.rubric-cell input {
   text-align: left;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.35;
-  padding: 3px 4px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
-}
-
-.rubric-table td.rubric-cell textarea.rubric-textarea:hover {
-  background: rgba(109, 134, 200, 0.06);
-}
-
-.rubric-table td.rubric-cell textarea.rubric-textarea:focus {
-  outline: none;
-  background: var(--white);
-  box-shadow: 0 0 0 2.5px var(--pastel-pink);
-}
-
-/* Copia testuale dei giudizi: nascosta a schermo, usata solo in stampa */
-.rubric-print-text {
-  display: none;
+  min-width: 150px;
 }
 
 .rubric-table td.rubric-cell-disabled {
@@ -3003,75 +3032,14 @@ h1, h2, h3 {
     left: 0;
     width: 100%;
   }
-  /* Niente scroll orizzontale: la tabella si adatta al foglio */
-  body.printing-rubric #rubricPrintArea .table-wrapper {
-    overflow: visible !important;
-    box-shadow: none !important;
-    background: none !important;
-    border: 1px solid #ccc;
-  }
-
   body.printing-rubric .rubric-table {
-    min-width: 0 !important;
-    width: 100% !important;
-    table-layout: fixed;          /* colonne di larghezza uguale */
-    font-size: 10.5px;
-  }
-
-  body.printing-rubric .rubric-table th,
-  body.printing-rubric .rubric-table td {
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    padding: 5px 6px;
-    vertical-align: top;
-    border: 1px solid #bbb;
-  }
-
-  body.printing-rubric .rubric-table th.rubric-vote-col,
-  body.printing-rubric .rubric-table td.rubric-vote-cell {
-    width: 38px;
     min-width: 0;
-    max-width: none;
-    text-align: center;
-    vertical-align: middle;
+    width: 100%;
+    font-size: 12px;
   }
-
-  /* Input e textarea nascosti, al loro posto il testo che va a capo */
-  body.printing-rubric .rubric-table input,
-  body.printing-rubric .rubric-table textarea {
-    display: none !important;
-  }
-  body.printing-rubric .rubric-print-text {
-    display: block;
-    text-align: left;
-    white-space: pre-wrap;
-    line-height: 1.3;
-  }
-  body.printing-rubric .rubric-print-header {
-    display: inline;
-    font-weight: 700;
-    text-align: center;
-  }
-  body.printing-rubric .subheader-cell {
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 2px 4px;
-  }
-
-  /* Una riga di voto non viene spezzata tra due pagine;
-     l'intestazione si ripete su ogni pagina */
-  body.printing-rubric .rubric-table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  body.printing-rubric .rubric-table thead {
-    display: table-header-group;
-  }
-  body.printing-rubric .rubric-table thead th {
-    position: static !important;
+  body.printing-rubric .rubric-table input {
+    border: none !important;
+    background: transparent !important;
   }
   /* Il placeholder "Giudizio…" è solo un aiuto in editing: in stampa deve
      restare invisibile, così le celle senza giudizio escono vuote invece
@@ -3317,109 +3285,16 @@ h1, h2, h3 {
   color: #8a2a22;
 }
 
-/* ── Spunta: scelta per singolo studente ── */
-.add-section-col-td {
-  position: relative;
-}
 
-.check-student-trigger {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  z-index: 3;
-}
-
-.check-student-trigger::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  border-style: solid;
-  border-width: 0 9px 9px 0;
-  border-color: transparent rgba(85, 105, 159, 0.25) transparent transparent;
-  transform-origin: top right;
-  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
-}
-
-.check-student-trigger:hover::after {
-  transform: scale(1.35);
-  border-right-color: rgba(85, 105, 159, 0.6);
-}
-
-/* Rosso: lo studente ha una scelta sua o un commento */
-.check-student-trigger.is-custom::after {
-  border-color: transparent var(--verybad) transparent transparent;
-}
-
-.check-student-badge {
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1.2;
-  padding: 1px 4px;
-  border-radius: 6px;
-  background: var(--good-bg);
-  color: var(--goodgrade);
-}
-.check-student-badge.is-malus {
-  background: var(--bad-bg);
-  color: var(--verybad);
-}
-
-/* La nuvoletta ora può contenere un commento lungo */
-.check-note-input {
-  white-space: normal;
-  max-width: 220px;
-  text-align: left;
-}
-
-/* Menu per singolo studente */
-.check-bonus-menu.is-student {
-  width: 260px;
-}
-
-.check-bonus-reset {
-  width: 100%;
-  margin-top: 6px;
-  padding: 5px 6px;
-  border-radius: 8px;
-  border: 1.5px dashed var(--glaucous);
-  background: transparent;
-  color: var(--glaucous-dark);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.check-bonus-reset:hover {
-  background: #f0f2fa;
-}
-
-.check-bonus-comment-label {
-  display: block;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--glaucous-dark);
-}
-
-.check-bonus-comment {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 4px;
-  min-height: 56px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1.5px solid #ddd;
-  font: inherit;
+/* Avviso nella dialog "Nuova verifica" quando si duplica da una verifica
+   archiviata (pulsante "📋 Duplica" nel pannello Verifiche archiviate). */
+.duplicate-from-hint {
+  margin: -4px 0 4px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(159, 122, 234, 0.12);
+  border: 1.5px solid rgba(159, 122, 234, 0.35);
+  color: #5a3d8a;
   font-size: 12.5px;
-  font-weight: 400;
-  resize: vertical;
-}
-.check-bonus-comment:focus {
-  outline: none;
-  border-color: var(--glaucous);
+  line-height: 1.4;
 }

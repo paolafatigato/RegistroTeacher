@@ -358,20 +358,10 @@ function init() {
   if (rubricPrintBtn) {
     rubricPrintBtn.addEventListener("click", () => {
       document.body.classList.add("printing-rubric");
-      // @page non si può limitare con una classe CSS: lo inserisco solo
-      // per questa stampa, così le altre stampe dell'app restano invariate.
-      let pageStyle = document.getElementById("rubricPageStyle");
-      if (!pageStyle) {
-        pageStyle = document.createElement("style");
-        pageStyle.id = "rubricPageStyle";
-        pageStyle.textContent = "@page { size: A4 landscape; margin: 10mm; }";
-        document.head.appendChild(pageStyle);
-      }
       window.print();
     });
     window.addEventListener("afterprint", () => {
       document.body.classList.remove("printing-rubric");
-      document.getElementById("rubricPageStyle")?.remove();
     });
   }
 
@@ -513,6 +503,7 @@ function init() {
     const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
     if (newTestCategoryInputEl) newTestCategoryInputEl.value = "";
     _selectedArchivedTestTemplate = null;
+    setDuplicateFromHint(null);
     refreshArchivedTestPicker();
     refreshNewTestClassesField();
     refreshSuggestions();
@@ -520,6 +511,7 @@ function init() {
   });
 
   cancelNewTestBtn.addEventListener("click", () => {
+    setDuplicateFromHint(null);
     newTestDialog.close();
   });
 
@@ -651,13 +643,8 @@ function init() {
       if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
       student.scores[testId][sectionId].comments[key] = text || null;
     }
-    if (commentModalContext.type === "header") {
-      trigger.classList.toggle("has-comment", Boolean(text));
-      trigger.title = text || "Aggiungi commento";
-    } else {
-      const { student, testId, sectionId, subsectionId } = commentModalContext;
-      updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
-    }
+    trigger.classList.toggle("has-comment", Boolean(text));
+    trigger.title = text || "Aggiungi commento";
     // If this is a header trigger, also mark the TH so we can style the whole cell
     if (commentModalContext.type === "header") {
       const th = trigger.closest("th");
@@ -1030,6 +1017,14 @@ function renderArchivedTestsPanel() {
 
     const rowActions = document.createElement("div");
     rowActions.className = "archived-test-row-actions";
+
+    const duplicateBtn = document.createElement("button");
+    duplicateBtn.type = "button";
+    duplicateBtn.className = "btn btn-secondary btn-small";
+    duplicateBtn.textContent = "📋 Duplica";
+    duplicateBtn.title = "Crea una nuova verifica con la stessa struttura (sezioni, pesi, versioni), senza voti né classi: utile per riusarla con le classi di quest'anno";
+    duplicateBtn.addEventListener("click", () => duplicateArchivedTest(test));
+    rowActions.appendChild(duplicateBtn);
 
     const restoreBtn = document.createElement("button");
     restoreBtn.type = "button";
@@ -1832,14 +1827,22 @@ function renderSections(version) {
     section.subsections.forEach((subsection) => {
       const subRow = subsectionTemplate.content.firstElementChild.cloneNode(true);
       const subNameInput = subRow.querySelector(".subsection-name");
+      const subCategoryInput = subRow.querySelector(".subsection-category");
       const subWeightInput = subRow.querySelector(".subsection-weight");
       const subMaxInput = subRow.querySelector(".subsection-max");
       subNameInput.value = subsection.name;
+      subCategoryInput.value = subsection.category ?? "";
       subWeightInput.value = subsection.weight ?? "";
       subMaxInput.value = subsection.max ?? "";
 
       subNameInput.addEventListener("change", (event) => {
         subsection.name = event.target.value;
+        saveState();
+        renderTestTable();
+      });
+
+      subCategoryInput.addEventListener("change", (event) => {
+        subsection.category = event.target.value;
         saveState();
         renderTestTable();
       });
@@ -2176,7 +2179,7 @@ function renderTestTable() {
     gradeTable.querySelectorAll(".check-cell-wrapper input[type='checkbox']").forEach(cb => {
       cb.title = newLabel;
     });
-    gradeTable.querySelectorAll(".check-note-input[data-uses-label]").forEach(div => {
+    gradeTable.querySelectorAll(".check-note-input").forEach(div => {
       div.textContent = newLabel;
     });
   });
@@ -2414,52 +2417,17 @@ function renderTestTable() {
     checkboxEl.addEventListener("change", (e) => {
       checkData.checked = e.target.checked;
       saveState();
-      // Con un bonus/malus attivo (generale o del singolo studente) il voto cambia
-      if (getStudentCheckBonusSetting(student, selectedTest) !== 0) render();
+      // Con un bonus/malus attivo il voto finale cambia: ridisegna
+      if (getCheckBonus(selectedTest) !== 0) render();
     });
     checkWrapper.appendChild(checkboxEl);
 
-    // Bonus/malus di QUESTO studente (piccola etichetta accanto alla spunta)
-    const studentBonus = getStudentCheckBonusSetting(student, selectedTest);
-    const hasOwnBonus = hasStudentOwnCheckBonus(student, selectedTest);
-    if (checkData.checked && studentBonus !== 0) {
-      const badge = document.createElement("span");
-      badge.className = "check-student-badge" + (studentBonus < 0 ? " is-malus" : "");
-      badge.textContent = formatCheckBonus(studentBonus);
-      checkWrapper.appendChild(badge);
-    }
-
-    // Nuvoletta al passaggio del mouse: il commento dello studente,
-    // oppure (se non c'è) l'etichetta della colonna
     const noteEl = document.createElement("div");
     noteEl.classList.add("check-note-input");
-    if (checkData.note) {
-      noteEl.textContent = checkData.note;
-    } else {
-      noteEl.textContent = selectedTest.checkboxLabel || "";
-      noteEl.dataset.usesLabel = "1";
-    }
+    noteEl.textContent = selectedTest.checkboxLabel || "";
     checkWrapper.appendChild(noteEl);
 
     addSectionPlaceholderTd.appendChild(checkWrapper);
-
-    // Triangolino della cella: scelta per questo studente + commento
-    const studentCheckTrigger = document.createElement("div");
-    studentCheckTrigger.className =
-      "check-student-trigger" +
-      (hasOwnBonus || checkData.note ? " is-custom" : "");
-    studentCheckTrigger.title = checkData.note
-      ? `${formatCheckBonus(studentBonus) || "Nessun cambio"} — ${checkData.note}`
-      : "Clicca per scegliere cosa fa la spunta a questo studente e scrivere un commento";
-    studentCheckTrigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (openCheckBonusMenu._el && openCheckBonusMenu._anchor === studentCheckTrigger) {
-        closeCheckBonusMenu();
-      } else {
-        openCheckBonusMenu(studentCheckTrigger, selectedTest, student);
-      }
-    });
-    addSectionPlaceholderTd.appendChild(studentCheckTrigger);
     row.appendChild(addSectionPlaceholderTd);
 
     const finalCell = document.createElement("td");
@@ -2593,10 +2561,6 @@ function createScoreInput(
     }
     // Aggiorna la cella FINAL della riga in-place, senza toccare il DOM dell'input attivo
     updateFinalCellInRow(input, student, getSelectedTest());
-    // Commento precompilato dalla Griglia di valutazione (solo sottosezioni)
-    if (type === "subsection") {
-      applyRubricAutoComment(student, testId, sectionId, subsectionId, input.parentElement);
-    }
   });
 
   // Navigazione tra celle con frecce della tastiera
@@ -2745,9 +2709,17 @@ function attachHeaderCommentTrigger(cell, obj, key) {
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella.
  */
 function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
+  const key = subsectionId ?? "direct";
+  const existingComment = student.scores?.[testId]?.[sectionId]?.comments?.[key];
+
   const trigger = document.createElement("div");
   trigger.className = "comment-trigger";
-  updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
+  if (existingComment) {
+    trigger.classList.add("has-comment");
+    trigger.title = existingComment;
+  } else {
+    trigger.title = "Aggiungi commento";
+  }
 
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2763,14 +2735,7 @@ function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
 function openCommentModal(student, testId, sectionId, subsectionId, trigger) {
   commentModalContext = { student, testId, sectionId, subsectionId, trigger };
   const key = subsectionId ?? "direct";
-  let existing = student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "";
-  // Commento vuoto ma voto già inserito (es. voti messi prima di compilare
-  // la griglia): propone il giudizio corrispondente, modificabile.
-  if (!existing && subsectionId) {
-    const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
-    const score = parseNumber(student.scores?.[testId]?.[sectionId]?.subsections?.[subsectionId]);
-    existing = getRubricJudgmentForScore(sub, score);
-  }
+  const existing = student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "";
   document.getElementById("commentTextarea").value = existing;
   document.getElementById("commentDialog").showModal();
   document.getElementById("commentTextarea").focus();
@@ -3116,15 +3081,6 @@ function renderRubricGrid() {
       });
       subWrap.appendChild(subName);
 
-      // Copia testuale del nome colonna: visibile solo in stampa (va a capo)
-      const subNamePrint = document.createElement("span");
-      subNamePrint.className = "rubric-print-text rubric-print-header";
-      subNamePrint.textContent = sub.name || "Sub";
-      subName.addEventListener("input", (e) => {
-        subNamePrint.textContent = e.target.value;
-      });
-      subWrap.appendChild(subNamePrint);
-
       const maxBadge = document.createElement("span");
       maxBadge.className = "rubric-max-badge";
       maxBadge.textContent = `/${getSubsectionMax(section, sub, fallbackPerSub)}`;
@@ -3170,22 +3126,10 @@ function renderRubricGrid() {
           if (!sub.rubric || typeof sub.rubric !== "object") {
             sub.rubric = {};
           }
-          // Textarea al posto dell'input: così i giudizi lunghi vanno a capo
-          const input = document.createElement("textarea");
-          input.rows = 1;
-          input.classList.add("rubric-textarea");
+          const input = document.createElement("input");
+          input.type = "text";
           input.placeholder = "Giudizio…";
           input.value = sub.rubric[voteValue] ?? "";
-
-          // Copia testuale del giudizio: visibile solo in stampa
-          const printText = document.createElement("div");
-          printText.className = "rubric-print-text";
-          printText.textContent = input.value;
-
-          input.addEventListener("input", (e) => {
-            autoResizeRubricTextarea(e.target);
-            printText.textContent = e.target.value;
-          });
           input.addEventListener("change", (e) => {
             const val = e.target.value;
             if (val.trim()) {
@@ -3196,7 +3140,6 @@ function renderRubricGrid() {
             saveState();
           });
           td.appendChild(input);
-          td.appendChild(printText);
         }
         row.appendChild(td);
       });
@@ -3205,114 +3148,6 @@ function renderRubricGrid() {
     tbody.appendChild(row);
   }
   rubricTable.appendChild(tbody);
-
-  // Altezza iniziale delle textarea (serve che siano già nel DOM)
-  requestAnimationFrame(resizeAllRubricTextareas);
-}
-
-/** Adatta l'altezza della textarea al suo contenuto. */
-function autoResizeRubricTextarea(el) {
-  if (!el) return;
-  el.style.height = "auto";
-  el.style.height = el.scrollHeight + "px";
-}
-
-function resizeAllRubricTextareas() {
-  if (!rubricTable) return;
-  rubricTable.querySelectorAll("textarea.rubric-textarea").forEach(autoResizeRubricTextarea);
-}
-
-// Se la finestra cambia larghezza, le righe vanno a capo diversamente
-window.addEventListener("resize", () => {
-  if (rubricView && rubricView.classList.contains("active")) {
-    resizeAllRubricTextareas();
-  }
-});
-
-// ─────────────────────────────────────────────────────────────
-//  COMMENTO PRECOMPILATO DALLA GRIGLIA
-//  Quando si inserisce un voto in una sottosezione, il commento della
-//  cella viene precompilato con il giudizio della Griglia di valutazione
-//  corrispondente al voto ARROTONDATO PER ECCESSO (4.5 → riga 5).
-//  Se nella griglia quella riga è vuota, il commento resta vuoto.
-//  Un commento scritto/modificato a mano non viene mai sovrascritto.
-// ─────────────────────────────────────────────────────────────
-
-/** Trova la sottosezione (con la sua griglia) nella versione di verifica
- *  assegnata a questo studente. */
-function findRubricSubsectionForStudent(student, testId, sectionId, subsectionId) {
-  const test = state.tests.find((t) => t.id === testId);
-  if (!test) return null;
-  const version =
-    getVersionById(test, getStudentVersionId(student, testId, getDefaultVersion(test)?.id)) ??
-    getDefaultVersion(test);
-  const section = (version?.sections ?? []).find((s) => s.id === sectionId);
-  if (!section) return null;
-  return (section.subsections ?? []).find((sub) => sub.id === subsectionId) ?? null;
-}
-
-/** Giudizio della griglia per un voto, arrotondato per eccesso. "" se non c'è. */
-function getRubricJudgmentForScore(sub, score) {
-  if (!sub || !sub.rubric || typeof sub.rubric !== "object") return "";
-  if (score === null || score === undefined || Number.isNaN(score)) return "";
-  // Arrotondo prima ai centesimi per evitare errori tipo 4.0000001 → 5
-  const rowKey = Math.ceil(Math.round(score * 100) / 100);
-  const judgment = sub.rubric[rowKey];
-  return typeof judgment === "string" ? judgment.trim() : "";
-}
-
-/** Il commento attuale è "automatico"? Sì se è vuoto oppure identico a uno
- *  dei giudizi della griglia di questa colonna (cioè non è stato personalizzato). */
-function isAutoRubricComment(sub, comment) {
-  const current = (comment ?? "").trim();
-  if (!current) return true;
-  if (!sub || !sub.rubric || typeof sub.rubric !== "object") return false;
-  return Object.values(sub.rubric).some(
-    (val) => typeof val === "string" && val.trim() === current
-  );
-}
-
-/** Il triangolino rosso compare solo se il commento è stato personalizzato,
- *  cioè è diverso dal giudizio della griglia per il voto attuale. */
-function updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId) {
-  if (!trigger) return;
-  const key = subsectionId ?? "direct";
-  const comment = (student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "").trim();
-
-  let isCustom = Boolean(comment);
-  if (comment && subsectionId) {
-    const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
-    const score = parseNumber(student.scores?.[testId]?.[sectionId]?.subsections?.[subsectionId]);
-    const judgment = getRubricJudgmentForScore(sub, score);
-    isCustom = comment !== judgment;
-  }
-
-  trigger.classList.toggle("has-comment", isCustom);
-  // Il testo resta leggibile al passaggio del mouse anche se è quello automatico
-  trigger.title = comment || "Aggiungi commento";
-}
-
-/** Aggiorna il commento della cella in base al voto appena inserito. */
-function applyRubricAutoComment(student, testId, sectionId, subsectionId, cell) {
-  if (!subsectionId) return;
-  const sub = findRubricSubsectionForStudent(student, testId, sectionId, subsectionId);
-  if (!sub) return;
-
-  ensureScoreStore(student, testId, sectionId);
-  const store = student.scores[testId][sectionId];
-  if (!store.comments) store.comments = {};
-
-  const currentComment = store.comments[subsectionId];
-  if (isAutoRubricComment(sub, currentComment)) {
-    const score = parseNumber(store.subsections[subsectionId]);
-    const judgment = getRubricJudgmentForScore(sub, score);
-    store.comments[subsectionId] = judgment || null;
-  }
-  // Commento personalizzato: il testo non si tocca, ma l'indicatore va
-  // ricalcolato (il voto è cambiato)
-
-  const trigger = cell?.querySelector(".comment-trigger");
-  updateCellCommentIndicator(trigger, student, testId, sectionId, subsectionId);
 }
 
 function parseNumber(value) {
@@ -3498,6 +3333,7 @@ function createSubsection(base = null, name = null) {
   return {
     id: createId("sub"),
     name: name ?? "Sub",
+    category: base?.category ?? "",
     weight: parseNumber(base?.weight) ?? 1,
     max: parseNumber(base?.max) ?? 10,
   };
@@ -3633,6 +3469,56 @@ function buildTestFromTemplate(archivedTest, title, subject, category) {
     checkboxLabel: archivedTest.checkboxLabel,
     checkBonus: archivedTest.checkBonus ?? 0,
   };
+}
+
+/**
+ * Mostra/nasconde, in cima alla dialog "Nuova verifica", l'avviso che la si
+ * sta creando a partire da una verifica archiviata. null = nessun avviso.
+ */
+function setDuplicateFromHint(sourceTest) {
+  const form = document.getElementById("newTestForm");
+  if (!form) return;
+  let hint = document.getElementById("duplicateFromHint");
+  if (!sourceTest) {
+    if (hint) hint.style.display = "none";
+    return;
+  }
+  if (!hint) {
+    hint = document.createElement("p");
+    hint.id = "duplicateFromHint";
+    hint.className = "duplicate-from-hint";
+    const h3 = form.querySelector("h3");
+    (h3 || form).insertAdjacentElement("afterend", hint);
+  }
+  hint.textContent = `📋 Duplicata da "${sourceTest.title || "verifica archiviata"}": stessa struttura, nessun voto e nessuna classe collegati.`;
+  hint.style.display = "";
+}
+
+/**
+ * Apre la dialog "Nuova verifica" pronta a clonare la struttura (sezioni,
+ * pesi, versioni) della verifica archiviata cliccata — senza voti né classi,
+ * così si può riusarla con le classi di quest'anno (es. "to be test" di
+ * un'altra annata, riassegnato alle prime).
+ */
+function duplicateArchivedTest(test) {
+  const newTestDialog = document.getElementById("newTestDialog");
+  const newTestNameInput = document.getElementById("newTestNameInput");
+  const newTestSubjectInput = document.getElementById("newTestSubjectInput");
+  const newTestCategoryInputEl = document.getElementById("newTestCategoryInput");
+  if (!newTestDialog || !newTestNameInput) return;
+
+  newTestNameInput.value = test.title || "";
+  newTestSubjectInput.value = test.subject || "";
+  if (newTestCategoryInputEl) newTestCategoryInputEl.value = (test.categories || [])[0] || "";
+
+  _selectedArchivedTestTemplate = test;
+  refreshArchivedTestPicker(); // non tocca _selectedArchivedTestTemplate: resetta solo l'elenco a parte
+  setDuplicateFromHint(test);
+  refreshNewTestClassesField(); // nessuna classe pre-spuntata: si scelgono quelle di quest'anno
+  refreshSuggestions();
+  newTestDialog.showModal();
+  newTestNameInput.focus();
+  newTestNameInput.select();
 }
 
 // _selectedArchivedTestTemplate e _archivedTestPickerBuilt sono dichiarate
@@ -4802,12 +4688,7 @@ function collectRubricJudgmentsText(student, testId) {
       const score = parseNumber(rawScore);
       if (score === null || score === undefined) return;
       const judgment = sub.rubric[score];
-      // Se il commento della cella è già questo giudizio (precompilato),
-      // è già incluso nei commenti di Valutazione: evito il doppione.
-      const cellComment = (sectionScores.comments?.[sub.id] ?? "").trim();
-      if (judgment && judgment.trim() !== cellComment) {
-        lines.push(`${section.name} — ${sub.name}: ${judgment}`);
-      }
+      if (judgment) lines.push(`${section.name} — ${sub.name}: ${judgment}`);
     });
   });
   return lines.join("\n");
@@ -5184,7 +5065,6 @@ function computeParentSnapshotForStudent(student, selectedClass, selectedTest, d
           value: getStudentCheckBonus(student, selectedTest),
           text: formatCheckBonus(getStudentCheckBonus(student, selectedTest)),
           label: selectedTest.checkboxLabel || "",
-          note: student.checks?.[selectedTest.id]?.note || "",
         }
       : null,
     sections: sectionsOut,
@@ -5975,9 +5855,7 @@ function buildParentPreviewTestCard(test) {
     if (test.bonus && test.bonus.text) {
       const bonusEl = document.createElement("span");
       bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
-      bonusEl.textContent =
-        `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}` +
-        (test.bonus.note ? ` — ${test.bonus.note}` : "");
+      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
       finalWrap.appendChild(bonusEl);
     }
     card.appendChild(finalWrap);
@@ -6487,28 +6365,13 @@ function formatCheckBonus(n) {
   return (n > 0 ? "+" : "−") + body;
 }
 
-/** Lo studente ha una scelta sua (diversa da quella generale della verifica)? */
-function hasStudentOwnCheckBonus(student, test) {
-  const data = student?.checks?.[test?.id];
-  const own = parseNumber(data?.bonus);
-  return own !== null && isFinite(own);
-}
-
-/** Cosa fa la spunta a QUESTO studente: la sua scelta, altrimenti quella generale. */
-function getStudentCheckBonusSetting(student, test) {
-  if (!test) return 0;
-  if (hasStudentOwnCheckBonus(student, test)) {
-    return parseNumber(student.checks[test.id].bonus);
-  }
-  return getCheckBonus(test);
-}
-
 /** Bonus/malus realmente applicato a uno studente: vale solo se la spunta è attiva. */
 function getStudentCheckBonus(student, test) {
   if (!test) return 0;
+  const bonus = getCheckBonus(test);
+  if (!bonus) return 0;
   const data = student && student.checks && student.checks[test.id];
-  if (!data || !data.checked) return 0;
-  return getStudentCheckBonusSetting(student, test);
+  return data && data.checked ? bonus : 0;
 }
 
 /** Segna la cella FINAL (piccola etichetta +0.5 / −1 nell'angolo + tooltip). */
@@ -6526,16 +6389,13 @@ function markFinalCellBonus(finalCell, student, test) {
 
 function closeCheckBonusMenu() {
   const el = openCheckBonusMenu._el;
-  const onClose = openCheckBonusMenu._onClose;
   if (el) el.remove();
   openCheckBonusMenu._el = null;
   openCheckBonusMenu._anchor = null;
-  openCheckBonusMenu._onClose = null;
   document.removeEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.removeEventListener("keydown", onCheckBonusMenuKey, true);
-  window.removeEventListener("resize", onCheckBonusMenuScrollOrResize);
-  window.removeEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
-  if (typeof onClose === "function") onClose();
+  window.removeEventListener("resize", closeCheckBonusMenu);
+  window.removeEventListener("scroll", closeCheckBonusMenu, true);
 }
 
 function onCheckBonusMenuOutside(e) {
@@ -6550,17 +6410,6 @@ function onCheckBonusMenuKey(e) {
   if (e.key === "Escape") closeCheckBonusMenu();
 }
 
-/** Scroll/resize chiudono il menu, ma NON mentre scrivi il commento
- *  (su tablet la tastiera che si apre fa un resize). */
-function onCheckBonusMenuScrollOrResize(e) {
-  const el = openCheckBonusMenu._el;
-  if (!el) return;
-  if (e && e.target && e.target !== window && e.target !== document && el.contains(e.target)) return;
-  if (el.contains(document.activeElement)) return;
-  closeCheckBonusMenu();
-}
-
-/** Scelta generale della verifica (clessidra in intestazione). */
 function applyCheckBonus(testId, value) {
   const test = state.tests.find((t) => t.id === testId);
   if (!test) return;
@@ -6570,38 +6419,18 @@ function applyCheckBonus(testId, value) {
   render();
 }
 
-/** Scelta del singolo studente. value = null → torna alla scelta generale. */
-function applyStudentCheckBonus(student, testId, value) {
-  if (!student.checks) student.checks = {};
-  if (!student.checks[testId]) student.checks[testId] = { checked: false, note: "" };
-  student.checks[testId].bonus = value;
-  saveState();
+/** Piccolo menu sotto la clessidra: scegli cosa succede al voto quando c'è la spunta. */
+function openCheckBonusMenu(anchor, test) {
   closeCheckBonusMenu();
-  render();
-}
-
-/**
- * Menu della spunta.
- * - Senza studente: scelta generale per tutta la verifica (clessidra).
- * - Con studente: scelta solo per lui/lei + spazio per il commento.
- */
-function openCheckBonusMenu(anchor, test, student = null) {
-  closeCheckBonusMenu();
-  const isStudentMenu = Boolean(student);
-  const generalBonus = getCheckBonus(test);
-  const current = isStudentMenu ? getStudentCheckBonusSetting(student, test) : generalBonus;
-  const apply = (value) =>
-    isStudentMenu ? applyStudentCheckBonus(student, test.id, value) : applyCheckBonus(test.id, value);
+  const current = getCheckBonus(test);
 
   const menu = document.createElement("div");
-  menu.className = "check-bonus-menu" + (isStudentMenu ? " is-student" : "");
+  menu.className = "check-bonus-menu";
   menu.setAttribute("role", "dialog");
 
   const title = document.createElement("div");
   title.className = "check-bonus-menu-title";
-  title.textContent = isStudentMenu
-    ? `${student.name || "Studente"}: con la spunta il voto cambia di…`
-    : "Con la spunta il voto cambia di… (per tutti)";
+  title.textContent = "Con la spunta il voto cambia di…";
   menu.appendChild(title);
 
   const grid = document.createElement("div");
@@ -6611,7 +6440,7 @@ function openCheckBonusMenu(anchor, test, student = null) {
     btn.type = "button";
     btn.className = "check-bonus-opt " + (value > 0 ? "is-bonus" : "is-malus") + (value === current ? " selected" : "");
     btn.textContent = formatCheckBonus(value);
-    btn.addEventListener("click", () => apply(value));
+    btn.addEventListener("click", () => applyCheckBonus(test.id, value));
     grid.appendChild(btn);
   });
   menu.appendChild(grid);
@@ -6620,18 +6449,8 @@ function openCheckBonusMenu(anchor, test, student = null) {
   noneBtn.type = "button";
   noneBtn.className = "check-bonus-opt is-none" + (current === 0 ? " selected" : "");
   noneBtn.textContent = "Non cambia (solo spunta)";
-  noneBtn.addEventListener("click", () => apply(0));
+  noneBtn.addEventListener("click", () => applyCheckBonus(test.id, 0));
   menu.appendChild(noneBtn);
-
-  // Studente con scelta propria: pulsante per tornare a quella generale
-  if (isStudentMenu && hasStudentOwnCheckBonus(student, test)) {
-    const resetBtn = document.createElement("button");
-    resetBtn.type = "button";
-    resetBtn.className = "check-bonus-reset";
-    resetBtn.textContent = `↺ Come gli altri (${formatCheckBonus(generalBonus) || "non cambia"})`;
-    resetBtn.addEventListener("click", () => apply(null));
-    menu.appendChild(resetBtn);
-  }
 
   const customRow = document.createElement("div");
   customRow.className = "check-bonus-custom";
@@ -6650,7 +6469,7 @@ function openCheckBonusMenu(anchor, test, student = null) {
   const applyCustom = () => {
     const n = parseNumber(customInput.value);
     if (n === null || !isFinite(n)) { customInput.focus(); return; }
-    apply(Math.max(-10, Math.min(10, n)));
+    applyCheckBonus(test.id, Math.max(-10, Math.min(10, n)));
   };
   customOk.addEventListener("click", applyCustom);
   customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyCustom(); } });
@@ -6659,45 +6478,14 @@ function openCheckBonusMenu(anchor, test, student = null) {
   customRow.appendChild(customOk);
   menu.appendChild(customRow);
 
-  if (isStudentMenu) {
-    // Spazio per il commento (al posto della nota informativa)
-    if (!student.checks) student.checks = {};
-    if (!student.checks[test.id]) student.checks[test.id] = { checked: false, note: "" };
-    const checkData = student.checks[test.id];
-    const originalNote = checkData.note || "";
-
-    const commentLabel = document.createElement("label");
-    commentLabel.className = "check-bonus-comment-label";
-    commentLabel.textContent = "💬 Commento";
-    const commentBox = document.createElement("textarea");
-    commentBox.className = "check-bonus-comment";
-    commentBox.rows = 2;
-    commentBox.placeholder = "es. mezzo voto in meno perché hai consegnato con 1 giorno di ritardo";
-    commentBox.value = originalNote;
-    commentBox.addEventListener("input", (e) => {
-      checkData.note = e.target.value;
-    });
-    commentLabel.appendChild(commentBox);
-    menu.appendChild(commentLabel);
-
-    // Il commento si salva quando il menu si chiude (clic fuori, Esc o una scelta)
-    openCheckBonusMenu._onClose = () => {
-      checkData.note = (checkData.note || "").trim();
-      if (checkData.note !== originalNote) {
-        saveState();
-        render();
-      }
-    };
-  } else {
-    const note = document.createElement("div");
-    note.className = "check-bonus-menu-note";
-    note.textContent = "Vale per tutti. Puoi cambiarlo per un singolo studente dal triangolino nella sua cella. Il voto resta sempre tra 0 e 10.";
-    menu.appendChild(note);
-  }
+  const note = document.createElement("div");
+  note.className = "check-bonus-menu-note";
+  note.textContent = "Se non scegli nulla, la spunta non cambia il voto. Il voto resta sempre tra 0 e 10.";
+  menu.appendChild(note);
 
   document.body.appendChild(menu);
 
-  // Posizione: sotto il triangolino, dentro lo schermo
+  // Posizione: sotto la clessidra, dentro lo schermo
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -6712,8 +6500,8 @@ function openCheckBonusMenu(anchor, test, student = null) {
   openCheckBonusMenu._anchor = anchor;
   document.addEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.addEventListener("keydown", onCheckBonusMenuKey, true);
-  window.addEventListener("resize", onCheckBonusMenuScrollOrResize);
-  window.addEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
+  window.addEventListener("resize", closeCheckBonusMenu);
+  window.addEventListener("scroll", closeCheckBonusMenu, true);
 }
 
 // ── "Facilitata" per singola verifica ────────────────────────────────
