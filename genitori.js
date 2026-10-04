@@ -290,7 +290,9 @@ function buildTestCard(test) {
     if (test.bonus && test.bonus.text) {
       const bonusEl = document.createElement("span");
       bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
-      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
+      bonusEl.textContent =
+        `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}` +
+        (test.bonus.note ? ` — ${test.bonus.note}` : "");
       finalWrap.appendChild(bonusEl);
     }
     card.appendChild(finalWrap);

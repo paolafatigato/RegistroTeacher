@@ -502,17 +502,28 @@ h1, h2, h3 {
 .subheader-cell {
 }
 
+.column-selectable {
+  cursor: pointer;
+}
+
+.column-selectable:hover {
+  background: rgba(109, 134, 200, 0.12);
+}
+
 .subsection-category-badge {
-  display: inline-block;
-  margin-top: 2px;
-  padding: 1px 8px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border-radius: 50%;
   background: var(--pastel-pink);
   color: var(--glaucous-dark);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.6;
-  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: default;
 }
 
 /* Overlay buttons above header text to avoid layout shift */
@@ -961,6 +972,26 @@ h1, h2, h3 {
 .grade-table .student-cell input {
   text-align: left;
   font-weight: 600;
+  width: calc(100% - 26px);
+}
+
+/* Numero di riga stile Excel: clic → seleziona tutti i voti della riga */
+.grade-table .row-select-handle {
+  display: inline-block;
+  width: 20px;
+  margin-right: 4px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.grade-table .row-select-handle:hover {
+  background: rgba(109, 134, 200, 0.18);
+  color: #333;
 }
 
 .grade-table .total-cell {
@@ -1807,110 +1838,6 @@ h1, h2, h3 {
 }
 
 .settings-list-remove:hover { opacity: 1; color: #c0392b; }
-
-/* ── Colori classi ── */
-.settings-class-colors {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.class-color-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: #faf5ff;
-  border-radius: 10px;
-  border: 1px solid #e8d5f0;
-}
-
-.class-color-label {
-  font-weight: 700;
-  font-size: .9rem;
-  min-width: 60px;
-  color: #5a3060;
-}
-
-.class-color-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-  align-items: center;
-}
-
-.color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2.5px solid transparent;
-  cursor: pointer;
-  transition: transform .12s, border-color .12s;
-  padding: 0;
-}
-
-.color-swatch:hover { transform: scale(1.18); }
-
-.color-swatch.selected {
-  border-color: #333;
-  transform: scale(1.18);
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #7c3aed44;
-}
-
-.color-custom-wrapper {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-}
-
-.color-custom-dot {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg,
-    #ff0000, #ff9900, #ffee00, #33ff00, #00ffee, #0066ff, #9900ff, #ff0099, #ff0000);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1.5px #ccc;
-  pointer-events: none; /* il click passa all'input sotto, che è invisibile */
-  transition: transform .12s, box-shadow .12s;
-}
-
-.color-custom-wrapper:hover .color-custom-dot {
-  transform: scale(1.15);
-  box-shadow: 0 0 0 1.5px #7c3aed;
-}
-
-.color-custom-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: none;
-  background: none;
-  opacity: 0; /* invisibile: il pallino arcobaleno sopra fa da bottone visivo */
-  cursor: pointer;
-}
-
-.class-color-preview {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: .75rem;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,.4);
-  border: 2px solid rgba(255,255,255,.6);
-  box-shadow: 0 1px 4px rgba(0,0,0,.15);
-  flex-shrink: 0;
-}
 
 .settings-dialog-footer {
   margin-top: 20px;
@@ -3310,4 +3237,111 @@ h1, h2, h3 {
   color: #5a3d8a;
   font-size: 12.5px;
   line-height: 1.4;
+}
+
+/* ── Spunta: scelta per singolo studente ── */
+.add-section-col-td {
+  position: relative;
+}
+
+.check-student-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.check-student-trigger::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 9px 9px 0;
+  border-color: transparent rgba(85, 105, 159, 0.25) transparent transparent;
+  transform-origin: top right;
+  transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.check-student-trigger:hover::after {
+  transform: scale(1.35);
+  border-right-color: rgba(85, 105, 159, 0.6);
+}
+
+/* Rosso: lo studente ha una scelta sua o un commento */
+.check-student-trigger.is-custom::after {
+  border-color: transparent var(--verybad) transparent transparent;
+}
+
+.check-student-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: var(--good-bg);
+  color: var(--goodgrade);
+}
+.check-student-badge.is-malus {
+  background: var(--bad-bg);
+  color: var(--verybad);
+}
+
+/* La nuvoletta ora può contenere un commento lungo */
+.check-note-input {
+  white-space: normal;
+  max-width: 220px;
+  text-align: left;
+}
+
+/* Menu per singolo studente */
+.check-bonus-menu.is-student {
+  width: 260px;
+}
+
+.check-bonus-reset {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--glaucous);
+  background: transparent;
+  color: var(--glaucous-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check-bonus-reset:hover {
+  background: #f0f2fa;
+}
+
+.check-bonus-comment-label {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--glaucous-dark);
+}
+
+.check-bonus-comment {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  min-height: 56px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1.5px solid #ddd;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  resize: vertical;
+}
+.check-bonus-comment:focus {
+  outline: none;
+  border-color: var(--glaucous);
 }

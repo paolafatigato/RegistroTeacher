@@ -251,6 +251,16 @@ let selectionState = {
   startInput: null,
 };
 
+// Annulla/Ripristina (Ctrl+Z / Ctrl+Y) per QUALSIASI modifica ai voti —
+// verifiche, sezioni/subsection, pesi, punteggi massimi, commenti,
+// competenze, incolla. Vedi saveState() per come si riempie lo stack:
+// ogni chiamata registra lo stato COM'ERA prima di quella modifica.
+let undoStack = [];
+let redoStack = [];
+let lastCommittedSnapshot = null; // stato (serializzato) dopo l'ultimo saveState()
+let isRestoringUndoSnapshot = false; // evita che l'undo/redo si registri da solo
+const UNDO_STACK_LIMIT = 50;
+
 init();
 
 function init() {
@@ -543,7 +553,6 @@ function init() {
       testsSettingsDialog.querySelector("#settingsTabSubjects").style.display    = target === "subjects"    ? "" : "none";
       testsSettingsDialog.querySelector("#settingsTabCategories").style.display  = target === "categories"  ? "" : "none";
       testsSettingsDialog.querySelector("#settingsTabCompetencies").style.display = target === "competencies" ? "" : "none";
-      testsSettingsDialog.querySelector("#settingsTabClassColors").style.display = target === "classcolors" ? "" : "none";
     });
   });
 
@@ -607,22 +616,53 @@ function init() {
     });
   }
 
-  // Listener globale per Ctrl+C / Ctrl+V nella tabella voti
+  // Listener globale per Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Canc
+  // nella tabella voti. Vale anche quando il focus NON è in una cella (es. dopo
+  // aver cliccato un'intestazione di colonna/riga o il cestino di una sezione),
+  // ma non dentro altri campi di testo della pagina (dialog, filtri…): lì
+  // restano le scorciatoie normali del browser.
   document.addEventListener("keydown", (event) => {
     if (!testView.classList.contains("active")) return;
+    if (document.querySelector("dialog[open]")) return;
     const activeEl = document.activeElement;
-    if (!activeEl || !gradeTable.contains(activeEl)) return;
+    const inTable = Boolean(activeEl && gradeTable.contains(activeEl));
+    if (!inTable && isEditableField(activeEl)) return;
 
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-      if (selectionState.selectedInputs.size > 0) {
+    const mod = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+    const hasSelection = selectionState.selectedInputs.size > 0;
+
+    if (mod && key === "c") {
+      if (hasSelection) {
         event.preventDefault();
         copySelectedCells();
       }
-    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
-      if (selectionState.clipboard !== null) {
+    } else if (mod && key === "x") {
+      if (hasSelection) {
         event.preventDefault();
-        pasteSelectedCells(activeEl);
+        copySelectedCells();
+        clearSelectedCells();
       }
+    } else if (mod && key === "v") {
+      if (selectionState.clipboard !== null && (hasSelection || isScoreInput(activeEl))) {
+        event.preventDefault();
+        pasteSelectedCells(isScoreInput(activeEl) ? activeEl : null);
+      }
+    } else if (mod && !event.shiftKey && key === "z") {
+      event.preventDefault();
+      performUndo();
+    } else if (mod && (key === "y" || (event.shiftKey && key === "z"))) {
+      event.preventDefault();
+      performRedo();
+    } else if (!mod && (key === "delete" || key === "backspace")) {
+      // Più celle selezionate (o riga/colonna intera) → svuotale tutte, come
+      // Excel. Con una sola cella in modifica il tasto fa il suo lavoro normale.
+      if (selectionState.selectedInputs.size > 1 || (hasSelection && !isScoreInput(activeEl))) {
+        event.preventDefault();
+        clearSelectedCells();
+      }
+    } else if (key === "escape" && hasSelection) {
+      clearSelection();
     }
   });
 
@@ -1563,10 +1603,14 @@ function renderSettingsDialog() {
   }
 
   const doAddSubject = () => {
-    const val = newSubjectInput.value.trim();
+    // Rilegge l'input dal DOM al momento del click: quello catturato qui sopra
+    // in chiusura viene sostituito (vedi clone sotto, per evitare listener
+    // duplicati a ogni apertura del dialog) e resterebbe sempre vuoto.
+    const inputEl = document.getElementById("newSubjectInput");
+    const val = inputEl.value.trim();
     if (!val || state.settings.subjects.includes(val)) return;
     state.settings.subjects.push(val);
-    newSubjectInput.value = "";
+    inputEl.value = "";
     saveState();
     renderSubjectsList();
     refreshSuggestions();
@@ -1609,10 +1653,11 @@ function renderSettingsDialog() {
   }
 
   const doAddCategory = () => {
-    const val = newCategoryInput.value.trim();
+    const inputEl = document.getElementById("newCategoryInput");
+    const val = inputEl.value.trim();
     if (!val || state.settings.categories.includes(val)) return;
     state.settings.categories.push(val);
-    newCategoryInput.value = "";
+    inputEl.value = "";
     saveState();
     renderCategoriesList();
     refreshSuggestions();
@@ -1657,10 +1702,11 @@ function renderSettingsDialog() {
   }
 
   const doAddCompetency = () => {
-    const val = newCompetencyInput.value.trim();
+    const inputEl = document.getElementById("newCompetencyInput");
+    const val = inputEl.value.trim();
     if (!val || state.settings.subsectionCategories.includes(val)) return;
     state.settings.subsectionCategories.push(val);
-    newCompetencyInput.value = "";
+    inputEl.value = "";
     saveState();
     renderCompetenciesList();
   };
@@ -1671,106 +1717,6 @@ function renderSettingsDialog() {
   document.getElementById("newCompetencyInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doAddCompetency(); } });
   document.getElementById("addCompetencyBtn").addEventListener("click", doAddCompetency);
   renderCompetenciesList();
-
-  // ── Colori classi ─────────────────────────────────────────
-  const classColorsList = document.getElementById("classColorsList");
-  classColorsList.innerHTML = "";
-
-  const PALETTE = [
-    "#f08080", "#f4a460", "#ffd700", "#98fb98", "#6495ed", "#ba55d3",
-  ];
-
-  if (state.classes.length === 0) {
-    classColorsList.innerHTML = '<p style="color:#888;font-size:.9em;">Nessuna classe disponibile. Aggiungine una dalla sezione Classi.</p>';
-  } else {
-    state.classes.forEach(cls => {
-      const row = document.createElement("div");
-      row.className = "class-color-row";
-
-      const label = document.createElement("span");
-      label.className = "class-color-label";
-      label.textContent = cls.name || "Classe";
-      row.appendChild(label);
-
-      // Colore arrivato da Classroom Manager: decide lui, qui è solo in lettura
-      const cmColor = state._cmClassColors?.[cls.id];
-      if (cmColor) {
-        const cmNote = document.createElement("span");
-        cmNote.className = "settings-hint";
-        cmNote.textContent = "🔗 Impostato in Classroom Manager";
-        row.appendChild(cmNote);
-        const cmPreview = document.createElement("div");
-        cmPreview.className = "class-color-preview";
-        cmPreview.style.background = cmColor;
-        cmPreview.title = cls.name;
-        cmPreview.textContent = cls.name?.[0] ?? "?";
-        row.appendChild(cmPreview);
-        classColorsList.appendChild(row);
-        return;
-      }
-
-      const swatches = document.createElement("div");
-      swatches.className = "class-color-swatches";
-
-      PALETTE.forEach(color => {
-        const sw = document.createElement("button");
-        sw.type = "button";
-        sw.className = "color-swatch";
-        sw.style.background = color;
-        sw.title = color;
-        if ((state.settings.classColors[cls.id] || "").toLowerCase() === color.toLowerCase()) {
-          sw.classList.add("selected");
-        }
-        sw.addEventListener("click", () => {
-          state.settings.classColors[cls.id] = color;
-          saveState();
-          // Re-render solo i swatches di questa classe
-          swatches.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
-          sw.classList.add("selected");
-          colorPreview.style.background = color;
-          renderTestsList(); // aggiorna subito i colori nelle card
-        });
-        swatches.appendChild(sw);
-      });
-
-      // Pallino arcobaleno: cliccandolo si apre il selettore colore nativo per
-      // crearne uno personalizzato (l'input è invisibile ma sovrapposto al
-      // pallino, così il click ci arriva comunque).
-      const customWrapper = document.createElement("div");
-      customWrapper.className = "color-custom-wrapper";
-      customWrapper.title = "Crea un colore personalizzato";
-
-      const customDot = document.createElement("span");
-      customDot.className = "color-custom-dot";
-      customWrapper.appendChild(customDot);
-
-      const customInput = document.createElement("input");
-      customInput.type = "color";
-      customInput.className = "color-custom-input";
-      customInput.value = state.settings.classColors[cls.id] || "#cccccc";
-      customInput.addEventListener("input", (e) => {
-        state.settings.classColors[cls.id] = e.target.value;
-        swatches.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
-        colorPreview.style.background = e.target.value;
-        saveState();
-        renderTestsList();
-      });
-      customWrapper.appendChild(customInput);
-      swatches.appendChild(customWrapper);
-
-      row.appendChild(swatches);
-
-      // Preview chip
-      const colorPreview = document.createElement("div");
-      colorPreview.className = "class-color-preview";
-      colorPreview.style.background = state.settings.classColors[cls.id] || "transparent";
-      colorPreview.title = cls.name;
-      colorPreview.textContent = cls.name?.[0] ?? "?";
-      row.appendChild(colorPreview);
-
-      classColorsList.appendChild(row);
-    });
-  }
 }
 
 /** Aggiorna i <datalist> nel dialog "Nuova verifica" con i dati da settings */
@@ -1869,7 +1815,7 @@ function renderSections(version) {
     });
 
     card.querySelector(".remove-section").addEventListener("click", () => {
-      if (!confirm(`Eliminare la sezione "${section.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti in questa sezione, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
+      if (!confirm(`Eliminare la sezione "${section.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti in questa sezione, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Puoi comunque annullare con Ctrl+Z.`)) return;
       version.sections = version.sections.filter((item) => item.id !== section.id);
       removeSectionScores(section.id, getSelectedTest()?.id);
       saveState();
@@ -1923,7 +1869,7 @@ function renderSections(version) {
       });
 
       subRow.querySelector(".remove-subsection").addEventListener("click", () => {
-        if (!confirm(`Eliminare la subsection "${subsection.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti qui, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
+        if (!confirm(`Eliminare la subsection "${subsection.name || "senza nome"}"? Verranno cancellati per sempre tutti i voti già inseriti qui, per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Puoi comunque annullare con Ctrl+Z.`)) return;
         section.subsections = section.subsections.filter(
           (item) => item.id !== subsection.id
         );
@@ -1954,6 +1900,10 @@ function renderTestTable() {
       focusRawValue = activeEl.value; // preserva il testo grezzo es. "7." o "1,5"
     }
   }
+
+  // La selezione (celle evidenziate) sopravvive al re-render, per posizione
+  const prevSelection = getSelectionCoords();
+  clearSelection();
 
   gradeTable.innerHTML = "";
   warningArea.innerHTML = "";
@@ -2143,7 +2093,7 @@ function renderTestTable() {
       removeBtn.textContent = "×";
       removeBtn.title = "Elimina questa subsection e tutti i voti associati";
       removeBtn.addEventListener("click", () => {
-        if (!confirm(`Sei sicuro di voler eliminare la subsection "${subsection.name || "senza nome"}"? Tutti i voti già inseriti qui andranno persi per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Non si può annullare.`)) return;
+        if (!confirm(`Sei sicuro di voler eliminare la subsection "${subsection.name || "senza nome"}"? Tutti i voti già inseriti qui andranno persi per TUTTI gli alunni di TUTTE le classi che usano questa verifica. Puoi comunque annullare con Ctrl+Z.`)) return;
         section.subsections = section.subsections.filter(
           (item) => item.id !== subsection.id
         );
@@ -2156,12 +2106,34 @@ function renderTestTable() {
       if (subsection.category) {
         const catBadge = document.createElement("span");
         catBadge.classList.add("subsection-category-badge");
-        catBadge.textContent = subsection.category;
+        catBadge.textContent = subsection.category.charAt(0).toUpperCase();
+        catBadge.title = subsection.category;
         subHeaderWrap.appendChild(catBadge);
       }
 
       subTh.appendChild(subHeaderWrap);
       attachHeaderCommentTrigger(subTh, subsection, "comment", true);
+
+      // Click sull'intestazione (fuori da input/bottoni) → seleziona TUTTA la
+      // colonna di voti di questa subsection, come cliccare la lettera di
+      // colonna in Excel. Da lì: Ctrl+C, clic sulla colonna di destinazione,
+      // Ctrl+V (il copia/incolla esistente funziona già su qualsiasi colonna).
+      subTh.classList.add("column-selectable");
+      subTh.title = "Clicca per selezionare tutta la colonna";
+      // mousedown (non click): se si stava scrivendo in una cella, il blur
+      // ridisegna la tabella e il click andrebbe perso.
+      subTh.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) return;
+        if (event.target.closest("input, button, .comment-trigger")) return;
+        const colIdxInSubHeader = Array.from(subHeaderRow.children).indexOf(subTh);
+        if (colIdxInSubHeader === -1) return;
+        event.preventDefault();
+        prepareHeaderSelection();
+        // +2: le colonne "Studente" e "Facilitata" hanno rowSpan e non hanno
+        // una cella propria in subHeaderRow, ma ce l'hanno in ogni riga del tbody.
+        selectEntireColumn(colIdxInSubHeader + 2);
+      });
+
       subHeaderRow.appendChild(subTh);
 
       const weightTh = document.createElement("th");
@@ -2250,7 +2222,7 @@ function renderTestTable() {
     gradeTable.querySelectorAll(".check-cell-wrapper input[type='checkbox']").forEach(cb => {
       cb.title = newLabel;
     });
-    gradeTable.querySelectorAll(".check-note-input").forEach(div => {
+    gradeTable.querySelectorAll(".check-note-input[data-uses-label]").forEach(div => {
       div.textContent = newLabel;
     });
   });
@@ -2327,6 +2299,24 @@ function renderTestTable() {
 
     const studentCell = document.createElement("td");
     studentCell.classList.add("student-cell");
+
+    // Maniglia "numero di riga" come in Excel: clic → seleziona tutti i voti
+    // della riga (poi Ctrl+C / Ctrl+X / Ctrl+V / Canc).
+    const rowHandle = document.createElement("span");
+    rowHandle.className = "row-select-handle";
+    rowHandle.textContent = String(tbody.children.length + 1);
+    rowHandle.title = "Clicca per selezionare tutta la riga";
+    rowHandle.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rowIdx = Array.from(tbody.children).indexOf(row);
+      prepareHeaderSelection();
+      selectEntireRow(rowIdx);
+    });
+    rowHandle.addEventListener("click", (event) => event.stopPropagation());
+    studentCell.appendChild(rowHandle);
+
     const studentInput = document.createElement("input");
     studentInput.type = "text";
     studentInput.value = student.name || "";
@@ -2488,17 +2478,52 @@ function renderTestTable() {
     checkboxEl.addEventListener("change", (e) => {
       checkData.checked = e.target.checked;
       saveState();
-      // Con un bonus/malus attivo il voto finale cambia: ridisegna
-      if (getCheckBonus(selectedTest) !== 0) render();
+      // Con un bonus/malus attivo (generale o del singolo studente) il voto cambia
+      if (getStudentCheckBonusSetting(student, selectedTest) !== 0) render();
     });
     checkWrapper.appendChild(checkboxEl);
 
+    // Bonus/malus di QUESTO studente (piccola etichetta accanto alla spunta)
+    const studentBonus = getStudentCheckBonusSetting(student, selectedTest);
+    const hasOwnBonus = hasStudentOwnCheckBonus(student, selectedTest);
+    if (checkData.checked && studentBonus !== 0) {
+      const badge = document.createElement("span");
+      badge.className = "check-student-badge" + (studentBonus < 0 ? " is-malus" : "");
+      badge.textContent = formatCheckBonus(studentBonus);
+      checkWrapper.appendChild(badge);
+    }
+
+    // Nuvoletta al passaggio del mouse: il commento dello studente,
+    // oppure (se non c'è) l'etichetta della colonna
     const noteEl = document.createElement("div");
     noteEl.classList.add("check-note-input");
-    noteEl.textContent = selectedTest.checkboxLabel || "";
+    if (checkData.note) {
+      noteEl.textContent = checkData.note;
+    } else {
+      noteEl.textContent = selectedTest.checkboxLabel || "";
+      noteEl.dataset.usesLabel = "1";
+    }
     checkWrapper.appendChild(noteEl);
 
     addSectionPlaceholderTd.appendChild(checkWrapper);
+
+    // Triangolino della cella: scelta per questo studente + commento
+    const studentCheckTrigger = document.createElement("div");
+    studentCheckTrigger.className =
+      "check-student-trigger" +
+      (hasOwnBonus || checkData.note ? " is-custom" : "");
+    studentCheckTrigger.title = checkData.note
+      ? `${formatCheckBonus(studentBonus) || "Nessun cambio"} — ${checkData.note}`
+      : "Clicca per scegliere cosa fa la spunta a questo studente e scrivere un commento";
+    studentCheckTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (openCheckBonusMenu._el && openCheckBonusMenu._anchor === studentCheckTrigger) {
+        closeCheckBonusMenu();
+      } else {
+        openCheckBonusMenu(studentCheckTrigger, selectedTest, student);
+      }
+    });
+    addSectionPlaceholderTd.appendChild(studentCheckTrigger);
     row.appendChild(addSectionPlaceholderTd);
 
     const finalCell = document.createElement("td");
@@ -2554,6 +2579,8 @@ function renderTestTable() {
 
   gradeTable.appendChild(tbody);
 
+  restoreSelectionCoords(prevSelection);
+
   // Ripristina il focus sulla stessa cella dopo il re-render
   if (focusRowIdx >= 0 && focusCellIdx >= 0) {
     const tbody2 = gradeTable.querySelector("tbody");
@@ -2597,6 +2624,7 @@ function createScoreInput(
   ensureScoreStore(student, testId, sectionId);
   const input = document.createElement("input");
   input.type = "number";
+  input.classList.add("score-input"); // solo queste celle si copiano/incollano
   input.step = "0.1";
   input.min = "0";
   input.disabled = Boolean(isDisabled);
@@ -3942,6 +3970,21 @@ function getStudentAverage(student) {
   return sum / scores.length;
 }
 
+// Le uniche chiavi che contano per l'undo: solo i dati di valutazione, MAI
+// lo stato di navigazione (classe/verifica/vista selezionate) — undo deve
+// riportare indietro i VOTI, non spostare la docente da un'altra parte.
+function buildUndoSnapshot(dataToSave) {
+  return JSON.stringify({
+    tests: dataToSave.tests,
+    settings: dataToSave.settings,
+    studentScores: dataToSave.studentScores,
+    studentTestVersions: dataToSave.studentTestVersions,
+    studentFacilitated: dataToSave.studentFacilitated,
+    studentChecks: dataToSave.studentChecks,
+    studentParentConfig: dataToSave.studentParentConfig,
+  });
+}
+
 function saveState() {
   // Salva preferenze UI e cache voti in localStorage (fallback offline)
   const dataToSave = {
@@ -3958,6 +4001,20 @@ function saveState() {
     studentChecks: buildStudentChecksMap(),
     studentParentConfig: buildStudentParentConfigMap(),
   };
+
+  // Registra lo stato COM'ERA prima di questa modifica, per Ctrl+Z. Non lo
+  // facciamo mentre stiamo noi stessi applicando un undo/redo (altrimenti
+  // si riempirebbe lo stack da solo), e solo se qualcosa è davvero cambiato.
+  if (!isRestoringUndoSnapshot) {
+    const currentSnapshot = buildUndoSnapshot(dataToSave);
+    if (lastCommittedSnapshot !== null && currentSnapshot !== lastCommittedSnapshot) {
+      undoStack.push(lastCommittedSnapshot);
+      if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
+      redoStack = [];
+    }
+    lastCommittedSnapshot = currentSnapshot;
+  }
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
 
   // Salva voti e test su Firebase con debounce (500ms)
@@ -3966,6 +4023,86 @@ function saveState() {
     clearTimeout(fbSaveTimer);
     fbSaveTimer = setTimeout(() => saveGradingToFirebase(), 500);
   }
+}
+
+/** Riapplica uno snapshot (stringa JSON di buildUndoSnapshot) allo stato live. */
+function applyUndoSnapshot(snapshotJson) {
+  const data = JSON.parse(snapshotJson);
+
+  state.tests = Array.isArray(data.tests) ? data.tests.map(normalizeTestFromFirebase) : [];
+  state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
+  state.settings = data.settings || state.settings;
+
+  const scores = data.studentScores || {};
+  const testVersions = data.studentTestVersions || {};
+  const facilitated = data.studentFacilitated || {};
+  const checks = data.studentChecks || {};
+  const parentConfig = data.studentParentConfig || {};
+
+  state.classes.forEach((cls) => {
+    cls.students.forEach((student) => {
+      student.scores = scores[student.id] || {};
+      student.testVersions = testVersions[student.id] || {};
+      if (facilitated[student.id]) {
+        student.facilitated = true;
+      } else {
+        delete student.facilitated;
+      }
+      student.checks = checks[student.id] || {};
+      student.parentConfig = parentConfig[student.id] || {};
+    });
+  });
+}
+
+function refreshAfterUndo() {
+  renderConfig();
+  renderTestTable();
+  render();
+}
+
+/**
+ * Se si sta scrivendo in una cella, registra prima quel valore come passo a sé:
+ * così Ctrl+Z annulla proprio ciò che si è appena scritto (e non il passo
+ * precedente), e il blur della cella non riscrive il vecchio valore dopo l'undo.
+ */
+function commitActiveGradeInput() {
+  const el = document.activeElement;
+  if (el && gradeTable.contains(el) && el.tagName === "INPUT") el.blur();
+  saveState();
+}
+
+function performUndo() {
+  commitActiveGradeInput();
+  if (undoStack.length === 0) return;
+  const target = undoStack.pop();
+  redoStack.push(lastCommittedSnapshot);
+  if (redoStack.length > UNDO_STACK_LIMIT) redoStack.shift();
+
+  isRestoringUndoSnapshot = true;
+  applyUndoSnapshot(target);
+  lastCommittedSnapshot = target;
+  saveState();
+  isRestoringUndoSnapshot = false;
+
+  refreshAfterUndo();
+  setFirebaseStatus("↩️ Annullato");
+}
+
+function performRedo() {
+  commitActiveGradeInput();
+  if (redoStack.length === 0) return;
+  const target = redoStack.pop();
+  undoStack.push(lastCommittedSnapshot);
+  if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
+
+  isRestoringUndoSnapshot = true;
+  applyUndoSnapshot(target);
+  lastCommittedSnapshot = target;
+  saveState();
+  isRestoringUndoSnapshot = false;
+
+  refreshAfterUndo();
+  setFirebaseStatus("↪️ Ripristinato");
 }
 
 /**
@@ -5170,6 +5307,7 @@ function computeParentSnapshotForStudent(student, selectedClass, selectedTest, d
           value: getStudentCheckBonus(student, selectedTest),
           text: formatCheckBonus(getStudentCheckBonus(student, selectedTest)),
           label: selectedTest.checkboxLabel || "",
+          note: student.checks?.[selectedTest.id]?.note || "",
         }
       : null,
     sections: sectionsOut,
@@ -5960,7 +6098,9 @@ function buildParentPreviewTestCard(test) {
     if (test.bonus && test.bonus.text) {
       const bonusEl = document.createElement("span");
       bonusEl.className = "parent-final-bonus" + (Number(test.bonus.value) < 0 ? " is-malus" : "");
-      bonusEl.textContent = `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}`;
+      bonusEl.textContent =
+        `${test.bonus.label || (Number(test.bonus.value) < 0 ? "Malus" : "Bonus")}: ${test.bonus.text}` +
+        (test.bonus.note ? ` — ${test.bonus.note}` : "");
       finalWrap.appendChild(bonusEl);
     }
     card.appendChild(finalWrap);
@@ -6201,10 +6341,59 @@ function initializeInputSelection(input) {
   });
 }
 
+/** È una cella voto della tabella (non nome studente, non checkbox)? */
+function isScoreInput(el) {
+  return Boolean(el && el.classList && el.classList.contains("score-input") && gradeTable.contains(el));
+}
+
+/** Campo in cui si scrive (dove Ctrl+Z/C/V devono restare quelli del browser). */
+function isEditableField(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (el.tagName !== "INPUT") return false;
+  return !["checkbox", "radio", "button", "submit", "reset", "file", "color", "range"].includes(el.type);
+}
+
+/**
+ * Prima di selezionare una riga/colonna intera: se si stava scrivendo in una
+ * cella, la si chiude (salva il voto) così la selezione non viene persa.
+ */
+function prepareHeaderSelection() {
+  const el = document.activeElement;
+  if (el && gradeTable.contains(el) && el.tagName === "INPUT") el.blur();
+}
+
+/** Posizioni [riga, colonna] delle celle selezionate (per ripristinarle dopo un re-render). */
+function getSelectionCoords() {
+  const coords = [];
+  selectionState.selectedInputs.forEach((input) => {
+    const cell = input.closest("td");
+    const row = input.closest("tr");
+    if (!cell || !row || !row.parentElement) return;
+    coords.push([
+      Array.from(row.parentElement.children).indexOf(row),
+      Array.from(row.children).indexOf(cell),
+    ]);
+  });
+  return coords;
+}
+
+function restoreSelectionCoords(coords) {
+  if (!coords || !coords.length) return;
+  const rows = Array.from(gradeTable.querySelectorAll("tbody tr"));
+  coords.forEach(([r, c]) => {
+    const cell = rows[r] && rows[r].children[c];
+    const input = cell && cell.querySelector("input.score-input");
+    if (input) addToSelection(input);
+  });
+}
+
 /**
  * Aggiunge un input alla selezione e lo evidenzia
  */
 function addToSelection(input) {
+  if (!isScoreInput(input)) return;
   selectionState.selectedInputs.add(input);
   input.classList.add("selected");
 }
@@ -6279,6 +6468,46 @@ function selectRangeBetween(input1, input2) {
 }
 
 /**
+ * Seleziona tutti gli input di UNA colonna (stesso indice in ogni riga del
+ * tbody), come cliccare l'intestazione di colonna in Excel.
+ */
+function selectEntireColumn(colIdx) {
+  const rows = Array.from(gradeTable.querySelectorAll("tbody tr"));
+  clearSelection();
+  rows.forEach((row) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    const cell = cells[colIdx];
+    const input = cell && cell.querySelector("input");
+    if (input) addToSelection(input);
+  });
+}
+
+/**
+ * Seleziona tutti i voti di UNA riga (studente), come cliccare il numero di
+ * riga in Excel. Nome e checkbox restano fuori (addToSelection li scarta).
+ */
+function selectEntireRow(rowIdx) {
+  const row = gradeTable.querySelectorAll("tbody tr")[rowIdx];
+  clearSelection();
+  if (!row) return;
+  row.querySelectorAll("input.score-input").forEach((input) => addToSelection(input));
+}
+
+/** Svuota tutte le celle selezionate (Ctrl+X, Canc): un solo passo di Ctrl+Z. */
+function clearSelectedCells() {
+  let changed = false;
+  selectionState.selectedInputs.forEach((input) => {
+    if (input.disabled || input.value === "") return;
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    changed = true;
+  });
+  if (!changed) return;
+  saveState();
+  render();
+}
+
+/**
  * Cancella tutta la selezione
  */
 function clearSelection() {
@@ -6342,7 +6571,11 @@ function copySelectedCells() {
       cols: Array.from(layout.cols),
     };
 
-    // Copia negli appunti del browser con textarea trick (funziona sempre)
+    // Copia anche negli appunti di sistema (per incollare in Excel/Fogli).
+    // Il textarea "ruba" il focus: la flag evita che il blur ridisegni la
+    // tabella, e poi il focus torna dov'era.
+    const prevFocus = document.activeElement;
+    isNavigatingWithArrows = true;
     const ta = document.createElement("textarea");
     ta.value = selectionState.clipboard;
     ta.style.cssText = "position:fixed;opacity:0;pointer-events:none;top:0;left:0;";
@@ -6351,60 +6584,69 @@ function copySelectedCells() {
     ta.select();
     try { document.execCommand("copy"); } catch (e) {}
     document.body.removeChild(ta);
+    if (prevFocus && prevFocus !== document.body && document.contains(prevFocus)) {
+      try { prevFocus.focus(); } catch (e) {}
+    }
+    isNavigatingWithArrows = false;
   }
 }
 
+/** Posizione [riga, colonna] della cella in alto a sinistra della selezione. */
+function getSelectionTopLeft() {
+  const coords = getSelectionCoords();
+  if (!coords.length) return null;
+  return [Math.min(...coords.map((c) => c[0])), Math.min(...coords.map((c) => c[1]))];
+}
+
 /**
- * Incolla i valori degli appunti a partire dalla cella selezionata
+ * Incolla i valori degli appunti a partire dalla cella in alto a sinistra
+ * della selezione (riga/colonna intera selezionata) oppure, se non c'è
+ * selezione, dalla cella in cui si sta scrivendo. Un solo valore copiato e
+ * più celle selezionate → lo ripete in tutte, come Excel.
+ * Tutto l'incolla è UN solo passo di Ctrl+Z.
  */
-function pasteSelectedCells(startInput) {
+function pasteSelectedCells(focusedInput) {
   if (!selectionState.clipboard) {
     return;
   }
-  
-  const table = gradeTable;
-  const rows = Array.from(table.querySelectorAll("tbody tr"));
-  
-  // Trova il punto di partenza del paste
-  let startRow = -1, startCol = -1;
-  rows.forEach((row, rowIdx) => {
-    const cells = Array.from(row.querySelectorAll("td"));
-    cells.forEach((cell, colIdx) => {
-      const cellInput = cell.querySelector("input");
-      if (cellInput === startInput) {
-        startRow = rowIdx;
-        startCol = colIdx;
-      }
+
+  const rows = Array.from(gradeTable.querySelectorAll("tbody tr"));
+  const lines = selectionState.clipboard.split("\n").map((line) => line.split("\t"));
+  const isSingleValue = lines.length === 1 && lines[0].length === 1;
+
+  const pasteInto = (targetInput, value) => {
+    if (!isScoreInput(targetInput) || targetInput.disabled) return;
+    targetInput.value = value;
+    targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  if (isSingleValue && selectionState.selectedInputs.size > 1) {
+    selectionState.selectedInputs.forEach((input) => pasteInto(input, lines[0][0]));
+  } else {
+    let startRow = -1, startCol = -1;
+    const topLeft = getSelectionTopLeft();
+    if (topLeft) {
+      [startRow, startCol] = topLeft;
+    } else if (focusedInput) {
+      const row = focusedInput.closest("tr");
+      const cell = focusedInput.closest("td");
+      startRow = rows.indexOf(row);
+      startCol = row ? Array.from(row.children).indexOf(cell) : -1;
+    }
+    if (startRow === -1 || startCol === -1) return;
+
+    lines.forEach((values, lineIdx) => {
+      const targetRow = rows[startRow + lineIdx];
+      if (!targetRow) return;
+      values.forEach((value, valueIdx) => {
+        const targetCell = targetRow.children[startCol + valueIdx];
+        if (targetCell) pasteInto(targetCell.querySelector("input"), value);
+      });
     });
-  });
-  
-  if (startRow === -1 || startCol === -1) return;
-  
-  // Parsa il clipboard
-  const lines = selectionState.clipboard.split("\n");
-  lines.forEach((line, lineIdx) => {
-    const values = line.split("\t");
-    const targetRow = startRow + lineIdx;
-    
-    if (targetRow >= rows.length) return;
-    
-    const cells = Array.from(rows[targetRow].querySelectorAll("td"));
-    values.forEach((value, valueIdx) => {
-      const targetCol = startCol + valueIdx;
-      if (targetCol >= cells.length) return;
-      
-      const targetCell = cells[targetCol];
-      if (!targetCell) return;
-      
-      const targetInput = targetCell.querySelector("input");
-      if (!targetInput || targetInput.disabled) return;
-      
-      // Incolla il valore
-      targetInput.value = value;
-      targetInput.dispatchEvent(new Event("input", { bubbles: true }));
-      targetInput.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-  });
+  }
+
+  saveState();
+  render();
 }
 
 
@@ -6470,13 +6712,28 @@ function formatCheckBonus(n) {
   return (n > 0 ? "+" : "−") + body;
 }
 
+/** Lo studente ha una scelta sua (diversa da quella generale della verifica)? */
+function hasStudentOwnCheckBonus(student, test) {
+  const data = student?.checks?.[test?.id];
+  const own = parseNumber(data?.bonus);
+  return own !== null && isFinite(own);
+}
+
+/** Cosa fa la spunta a QUESTO studente: la sua scelta, altrimenti quella generale. */
+function getStudentCheckBonusSetting(student, test) {
+  if (!test) return 0;
+  if (hasStudentOwnCheckBonus(student, test)) {
+    return parseNumber(student.checks[test.id].bonus);
+  }
+  return getCheckBonus(test);
+}
+
 /** Bonus/malus realmente applicato a uno studente: vale solo se la spunta è attiva. */
 function getStudentCheckBonus(student, test) {
   if (!test) return 0;
-  const bonus = getCheckBonus(test);
-  if (!bonus) return 0;
   const data = student && student.checks && student.checks[test.id];
-  return data && data.checked ? bonus : 0;
+  if (!data || !data.checked) return 0;
+  return getStudentCheckBonusSetting(student, test);
 }
 
 /** Segna la cella FINAL (piccola etichetta +0.5 / −1 nell'angolo + tooltip). */
@@ -6494,13 +6751,16 @@ function markFinalCellBonus(finalCell, student, test) {
 
 function closeCheckBonusMenu() {
   const el = openCheckBonusMenu._el;
+  const onClose = openCheckBonusMenu._onClose;
   if (el) el.remove();
   openCheckBonusMenu._el = null;
   openCheckBonusMenu._anchor = null;
+  openCheckBonusMenu._onClose = null;
   document.removeEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.removeEventListener("keydown", onCheckBonusMenuKey, true);
-  window.removeEventListener("resize", closeCheckBonusMenu);
-  window.removeEventListener("scroll", closeCheckBonusMenu, true);
+  window.removeEventListener("resize", onCheckBonusMenuScrollOrResize);
+  window.removeEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
+  if (typeof onClose === "function") onClose();
 }
 
 function onCheckBonusMenuOutside(e) {
@@ -6515,6 +6775,17 @@ function onCheckBonusMenuKey(e) {
   if (e.key === "Escape") closeCheckBonusMenu();
 }
 
+/** Scroll/resize chiudono il menu, ma NON mentre scrivi il commento
+ *  (su tablet la tastiera che si apre fa un resize). */
+function onCheckBonusMenuScrollOrResize(e) {
+  const el = openCheckBonusMenu._el;
+  if (!el) return;
+  if (e && e.target && e.target !== window && e.target !== document && el.contains(e.target)) return;
+  if (el.contains(document.activeElement)) return;
+  closeCheckBonusMenu();
+}
+
+/** Scelta generale della verifica (clessidra in intestazione). */
 function applyCheckBonus(testId, value) {
   const test = state.tests.find((t) => t.id === testId);
   if (!test) return;
@@ -6524,18 +6795,38 @@ function applyCheckBonus(testId, value) {
   render();
 }
 
-/** Piccolo menu sotto la clessidra: scegli cosa succede al voto quando c'è la spunta. */
-function openCheckBonusMenu(anchor, test) {
+/** Scelta del singolo studente. value = null → torna alla scelta generale. */
+function applyStudentCheckBonus(student, testId, value) {
+  if (!student.checks) student.checks = {};
+  if (!student.checks[testId]) student.checks[testId] = { checked: false, note: "" };
+  student.checks[testId].bonus = value;
+  saveState();
   closeCheckBonusMenu();
-  const current = getCheckBonus(test);
+  render();
+}
+
+/**
+ * Menu della spunta.
+ * - Senza studente: scelta generale per tutta la verifica (clessidra).
+ * - Con studente: scelta solo per lui/lei + spazio per il commento.
+ */
+function openCheckBonusMenu(anchor, test, student = null) {
+  closeCheckBonusMenu();
+  const isStudentMenu = Boolean(student);
+  const generalBonus = getCheckBonus(test);
+  const current = isStudentMenu ? getStudentCheckBonusSetting(student, test) : generalBonus;
+  const apply = (value) =>
+    isStudentMenu ? applyStudentCheckBonus(student, test.id, value) : applyCheckBonus(test.id, value);
 
   const menu = document.createElement("div");
-  menu.className = "check-bonus-menu";
+  menu.className = "check-bonus-menu" + (isStudentMenu ? " is-student" : "");
   menu.setAttribute("role", "dialog");
 
   const title = document.createElement("div");
   title.className = "check-bonus-menu-title";
-  title.textContent = "Con la spunta il voto cambia di…";
+  title.textContent = isStudentMenu
+    ? `${student.name || "Studente"}: con la spunta il voto cambia di…`
+    : "Con la spunta il voto cambia di… (per tutti)";
   menu.appendChild(title);
 
   const grid = document.createElement("div");
@@ -6545,7 +6836,7 @@ function openCheckBonusMenu(anchor, test) {
     btn.type = "button";
     btn.className = "check-bonus-opt " + (value > 0 ? "is-bonus" : "is-malus") + (value === current ? " selected" : "");
     btn.textContent = formatCheckBonus(value);
-    btn.addEventListener("click", () => applyCheckBonus(test.id, value));
+    btn.addEventListener("click", () => apply(value));
     grid.appendChild(btn);
   });
   menu.appendChild(grid);
@@ -6554,8 +6845,18 @@ function openCheckBonusMenu(anchor, test) {
   noneBtn.type = "button";
   noneBtn.className = "check-bonus-opt is-none" + (current === 0 ? " selected" : "");
   noneBtn.textContent = "Non cambia (solo spunta)";
-  noneBtn.addEventListener("click", () => applyCheckBonus(test.id, 0));
+  noneBtn.addEventListener("click", () => apply(0));
   menu.appendChild(noneBtn);
+
+  // Studente con scelta propria: pulsante per tornare a quella generale
+  if (isStudentMenu && hasStudentOwnCheckBonus(student, test)) {
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.className = "check-bonus-reset";
+    resetBtn.textContent = `↺ Come gli altri (${formatCheckBonus(generalBonus) || "non cambia"})`;
+    resetBtn.addEventListener("click", () => apply(null));
+    menu.appendChild(resetBtn);
+  }
 
   const customRow = document.createElement("div");
   customRow.className = "check-bonus-custom";
@@ -6574,7 +6875,7 @@ function openCheckBonusMenu(anchor, test) {
   const applyCustom = () => {
     const n = parseNumber(customInput.value);
     if (n === null || !isFinite(n)) { customInput.focus(); return; }
-    applyCheckBonus(test.id, Math.max(-10, Math.min(10, n)));
+    apply(Math.max(-10, Math.min(10, n)));
   };
   customOk.addEventListener("click", applyCustom);
   customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyCustom(); } });
@@ -6583,14 +6884,45 @@ function openCheckBonusMenu(anchor, test) {
   customRow.appendChild(customOk);
   menu.appendChild(customRow);
 
-  const note = document.createElement("div");
-  note.className = "check-bonus-menu-note";
-  note.textContent = "Se non scegli nulla, la spunta non cambia il voto. Il voto resta sempre tra 0 e 10.";
-  menu.appendChild(note);
+  if (isStudentMenu) {
+    // Spazio per il commento (al posto della nota informativa)
+    if (!student.checks) student.checks = {};
+    if (!student.checks[test.id]) student.checks[test.id] = { checked: false, note: "" };
+    const checkData = student.checks[test.id];
+    const originalNote = checkData.note || "";
+
+    const commentLabel = document.createElement("label");
+    commentLabel.className = "check-bonus-comment-label";
+    commentLabel.textContent = "💬 Commento";
+    const commentBox = document.createElement("textarea");
+    commentBox.className = "check-bonus-comment";
+    commentBox.rows = 2;
+    commentBox.placeholder = "es. mezzo voto in meno perché hai consegnato con 1 giorno di ritardo";
+    commentBox.value = originalNote;
+    commentBox.addEventListener("input", (e) => {
+      checkData.note = e.target.value;
+    });
+    commentLabel.appendChild(commentBox);
+    menu.appendChild(commentLabel);
+
+    // Il commento si salva quando il menu si chiude (clic fuori, Esc o una scelta)
+    openCheckBonusMenu._onClose = () => {
+      checkData.note = (checkData.note || "").trim();
+      if (checkData.note !== originalNote) {
+        saveState();
+        render();
+      }
+    };
+  } else {
+    const note = document.createElement("div");
+    note.className = "check-bonus-menu-note";
+    note.textContent = "Vale per tutti. Puoi cambiarlo per un singolo studente dal triangolino nella sua cella. Il voto resta sempre tra 0 e 10.";
+    menu.appendChild(note);
+  }
 
   document.body.appendChild(menu);
 
-  // Posizione: sotto la clessidra, dentro lo schermo
+  // Posizione: sotto il triangolino, dentro lo schermo
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -6605,8 +6937,8 @@ function openCheckBonusMenu(anchor, test) {
   openCheckBonusMenu._anchor = anchor;
   document.addEventListener("mousedown", onCheckBonusMenuOutside, true);
   document.addEventListener("keydown", onCheckBonusMenuKey, true);
-  window.addEventListener("resize", closeCheckBonusMenu);
-  window.addEventListener("scroll", closeCheckBonusMenu, true);
+  window.addEventListener("resize", onCheckBonusMenuScrollOrResize);
+  window.addEventListener("scroll", onCheckBonusMenuScrollOrResize, true);
 }
 
 // ── "Facilitata" per singola verifica ────────────────────────────────
