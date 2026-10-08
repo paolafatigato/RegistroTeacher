@@ -250,6 +250,17 @@ let selectionState = {
   isSelecting: false,
   startInput: null,
 };
+// Stato di selezione multipla nella Griglia di valutazione. Le celle si
+// identificano per coordinate (riga = voto, colonna = indice sottosezione),
+// così la selezione sopravvive ai re-render. Il clipboard NON si azzera
+// cambiando verifica: si può copiare da una griglia e incollare in un'altra.
+let rubricSelection = {
+  cells: new Set(), // "riga:colonna"
+  anchor: null,     // { row, col } da cui parte Shift+Click / trascinamento
+  isSelecting: false,
+  isRowSelecting: false, // trascinamento sui numeri dei voti (righe intere)
+  clipboard: null,  // { text, grid: string[][] }
+};
 
 // Annulla/Ripristina (Ctrl+Z / Ctrl+Y) per QUALSIASI modifica ai voti —
 // verifiche, sezioni/subsection, pesi, punteggi massimi, commenti,
@@ -376,6 +387,9 @@ function init() {
     window.addEventListener("afterprint", () => {
       document.body.classList.remove("printing-rubric");
     });
+  }
+  if (rubricView) {
+    initRubricClipboard();
   }
 
   if (parentsClassSelect) {
@@ -3243,8 +3257,11 @@ function renderRubricGrid() {
     const voteTd = document.createElement("td");
     voteTd.classList.add("rubric-vote-cell");
     voteTd.textContent = voteValue;
+    voteTd.title = "Clicca per selezionare tutta la riga (Shift+Click per più righe), poi Ctrl+C";
+    initRubricRowHeader(voteTd, voteValue);
     row.appendChild(voteTd);
 
+    let colIndex = 0;
     sections.forEach((section) => {
       const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
       section.subsections.forEach((sub, idx) => {
@@ -3252,6 +3269,12 @@ function renderRubricGrid() {
         const td = document.createElement("td");
         td.classList.add("rubric-cell");
         if (isLast) td.classList.add("section-divider");
+        td.dataset.row = voteValue;
+        td.dataset.col = colIndex++;
+        if (rubricSelection.cells.has(`${voteValue}:${td.dataset.col}`)) {
+          td.classList.add("rubric-cell-selected");
+        }
+        initRubricCellSelection(td);
 
         const subMax = getSubsectionMax(section, sub, fallbackPerSub) ?? 0;
         if (voteValue > subMax) {
@@ -3262,10 +3285,14 @@ function renderRubricGrid() {
           if (!sub.rubric || typeof sub.rubric !== "object") {
             sub.rubric = {};
           }
-          const input = document.createElement("input");
-          input.type = "text";
+          // Textarea (non input) così il testo va a capo e la cella cresce
+          // in altezza con il contenuto.
+          const input = document.createElement("textarea");
+          input.rows = 1;
+          input.className = "rubric-input";
           input.placeholder = "Giudizio…";
           input.value = sub.rubric[voteValue] ?? "";
+          input.addEventListener("input", () => autoResizeRubricInput(input));
           input.addEventListener("change", (e) => {
             const val = e.target.value;
             if (val.trim()) {
@@ -3284,6 +3311,380 @@ function renderRubricGrid() {
     tbody.appendChild(row);
   }
   rubricTable.appendChild(tbody);
+  rubricTable.querySelectorAll("textarea.rubric-input").forEach(autoResizeRubricInput);
+}
+
+/** Adatta l'altezza della cella al testo (fallback dove manca `field-sizing: content`). */
+function autoResizeRubricInput(textarea) {
+  if (window.CSS && CSS.supports && CSS.supports("field-sizing", "content")) return;
+  textarea.style.height = "auto";
+  if (textarea.scrollHeight > 0) textarea.style.height = `${textarea.scrollHeight + 2}px`;
+}
+
+// ── Griglia: selezione multipla e copia/incolla (stile Excel) ──
+//  - Trascina da una cella all'altra, Shift+Click, Ctrl+Click: seleziona celle
+//  - Click sul numero del voto (Shift+Click per più righe): righe intere
+//  - Ctrl+C / Ctrl+X / Canc sulla selezione; Ctrl+V incolla dalla cella in
+//    alto a sinistra della selezione (o da quella in cui si sta scrivendo).
+//  Negli appunti di sistema va testo separato da tabulazioni (celle con a
+//  capo tra virgolette, come Excel): si incolla anche in un'altra verifica,
+//  in Excel/Fogli, o da Excel/Fogli nella griglia.
+
+function rubricCellKey(row, col) {
+  return `${row}:${col}`;
+}
+
+function getRubricCellTd(row, col) {
+  return rubricTable.querySelector(`td.rubric-cell[data-row="${row}"][data-col="${col}"]`);
+}
+
+function getRubricColCount() {
+  const firstRow = rubricTable.querySelector("tbody tr");
+  return firstRow ? firstRow.querySelectorAll("td.rubric-cell").length : 0;
+}
+
+function getRubricRowCount() {
+  return rubricTable.querySelectorAll("tbody tr").length;
+}
+
+function clearRubricSelection() {
+  rubricSelection.cells.clear();
+  rubricTable.querySelectorAll("td.rubric-cell-selected").forEach((td) => td.classList.remove("rubric-cell-selected"));
+}
+
+function addRubricCellToSelection(row, col) {
+  rubricSelection.cells.add(rubricCellKey(row, col));
+  const td = getRubricCellTd(row, col);
+  if (td) td.classList.add("rubric-cell-selected");
+}
+
+function selectRubricRange(from, to) {
+  clearRubricSelection();
+  const [r1, r2] = [Math.min(from.row, to.row), Math.max(from.row, to.row)];
+  const [c1, c2] = [Math.min(from.col, to.col), Math.max(from.col, to.col)];
+  for (let r = r1; r <= r2; r++) {
+    for (let c = c1; c <= c2; c++) addRubricCellToSelection(r, c);
+  }
+}
+
+function getRubricTdCoords(td) {
+  return { row: Number(td.dataset.row), col: Number(td.dataset.col) };
+}
+
+/** Selezione con il mouse su una cella giudizio (anche su quelle disattivate). */
+function initRubricCellSelection(td) {
+  td.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    const coords = getRubricTdCoords(td);
+
+    if (event.shiftKey && rubricSelection.anchor) {
+      event.preventDefault();
+      selectRubricRange(rubricSelection.anchor, coords);
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const key = rubricCellKey(coords.row, coords.col);
+      if (rubricSelection.cells.has(key)) {
+        rubricSelection.cells.delete(key);
+        td.classList.remove("rubric-cell-selected");
+      } else {
+        addRubricCellToSelection(coords.row, coords.col);
+      }
+      rubricSelection.anchor = coords;
+      return;
+    }
+
+    // Click semplice: si scrive nella cella; la selezione multipla parte
+    // solo se, tenendo premuto, si passa su un'altra cella.
+    clearRubricSelection();
+    rubricSelection.anchor = coords;
+    rubricSelection.isSelecting = true;
+    const onMouseUp = () => {
+      rubricSelection.isSelecting = false;
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mouseup", onMouseUp);
+  });
+
+  td.addEventListener("mouseover", () => {
+    if (!rubricSelection.isSelecting || !rubricSelection.anchor) return;
+    const coords = getRubricTdCoords(td);
+    const { anchor } = rubricSelection;
+    if (coords.row === anchor.row && coords.col === anchor.col && rubricSelection.cells.size === 0) return;
+    selectRubricRange(anchor, coords);
+    // Durante il trascinamento non si deve selezionare testo dentro le celle.
+    const sel = window.getSelection && window.getSelection();
+    if (sel) sel.removeAllRanges();
+    if (document.activeElement && document.activeElement.classList.contains("rubric-input")) {
+      const ta = document.activeElement;
+      ta.setSelectionRange(ta.selectionEnd, ta.selectionEnd);
+    }
+  });
+}
+
+/** Click sul numero del voto = seleziona tutta la riga (Shift = più righe, trascinando pure). */
+function initRubricRowHeader(voteTd, rowIndex) {
+  const selectRows = (fromRow, toRow) => {
+    const lastCol = getRubricColCount() - 1;
+    if (lastCol < 0) return;
+    selectRubricRange({ row: fromRow, col: 0 }, { row: toRow, col: lastCol });
+  };
+  voteTd.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const fromRow = event.shiftKey && rubricSelection.anchor ? rubricSelection.anchor.row : rowIndex;
+    if (!(event.shiftKey && rubricSelection.anchor)) rubricSelection.anchor = { row: rowIndex, col: 0 };
+    selectRows(fromRow, rowIndex);
+    // Il focus va a una cella della griglia, così Ctrl+C/Ctrl+V funzionano subito.
+    const firstInput = voteTd.parentElement.querySelector("textarea.rubric-input");
+    if (firstInput) firstInput.focus({ preventScroll: true });
+    rubricSelection.isRowSelecting = true;
+    const onMouseUp = () => {
+      rubricSelection.isRowSelecting = false;
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mouseup", onMouseUp);
+  });
+  voteTd.addEventListener("mouseover", () => {
+    if (!rubricSelection.isRowSelecting || !rubricSelection.anchor) return;
+    selectRows(rubricSelection.anchor.row, rowIndex);
+  });
+}
+
+/** Il sub (sottosezione) che corrisponde alla colonna `col` della griglia, con il suo max. */
+function getRubricColumns() {
+  const test = getSelectedTest();
+  if (!test) return [];
+  const version = getVersionById(test, state.selectedTestVersionId) ?? getDefaultVersion(test);
+  const columns = [];
+  (version?.sections ?? []).forEach((section) => {
+    const fallbackPerSub = getSectionTotals(section).fallbackPerSubMax;
+    (section.subsections ?? []).forEach((sub) => {
+      columns.push({ sub, max: getSubsectionMax(section, sub, fallbackPerSub) ?? 0 });
+    });
+  });
+  return columns;
+}
+
+function getRubricValue(row, col) {
+  const column = getRubricColumns()[col];
+  if (!column || row > column.max) return "";
+  return column.sub.rubric?.[row] ?? "";
+}
+
+/** Scrive un giudizio; ritorna true se la cella esiste ed è modificabile. */
+function setRubricValue(columns, row, col, value) {
+  const column = columns[col];
+  if (!column || row > column.max) return false;
+  if (!column.sub.rubric || typeof column.sub.rubric !== "object") column.sub.rubric = {};
+  if (String(value).trim()) {
+    column.sub.rubric[row] = value;
+  } else {
+    delete column.sub.rubric[row];
+  }
+  return true;
+}
+
+/** Rettangolo della selezione: { r1, r2, c1, c2 } oppure null. */
+function getRubricSelectionBounds() {
+  if (rubricSelection.cells.size === 0) return null;
+  const coords = Array.from(rubricSelection.cells).map((k) => k.split(":").map(Number));
+  return {
+    r1: Math.min(...coords.map((c) => c[0])),
+    r2: Math.max(...coords.map((c) => c[0])),
+    c1: Math.min(...coords.map((c) => c[1])),
+    c2: Math.max(...coords.map((c) => c[1])),
+  };
+}
+
+/** Testo separato da tabulazioni, celle con a capo/tab/virgolette tra virgolette (come Excel). */
+function rubricGridToTsv(grid) {
+  const quote = (value) =>
+    /[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  return grid.map((row) => row.map(quote).join("\t")).join("\n");
+}
+
+function parseRubricTsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+  const src = text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch === '"' && src[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === "") {
+      inQuotes = true;
+    } else if (ch === "\t") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function copyRubricSelection() {
+  const bounds = getRubricSelectionBounds();
+  if (!bounds) return null;
+  const grid = [];
+  for (let r = bounds.r1; r <= bounds.r2; r++) {
+    const line = [];
+    for (let c = bounds.c1; c <= bounds.c2; c++) {
+      line.push(rubricSelection.cells.has(rubricCellKey(r, c)) ? getRubricValue(r, c) : "");
+    }
+    grid.push(line);
+  }
+  rubricSelection.clipboard = { text: rubricGridToTsv(grid), grid };
+  return rubricSelection.clipboard;
+}
+
+/** Chiude la cella in cui si sta scrivendo (il "change" salva il testo) prima di ridisegnare. */
+function commitActiveRubricInput() {
+  const el = document.activeElement;
+  if (el && el.classList && el.classList.contains("rubric-input")) el.blur();
+}
+
+/** Dopo un re-render: rimette il focus nella prima cella selezionata, così Ctrl+C/V continuano a funzionare. */
+function focusRubricSelectionStart() {
+  const bounds = getRubricSelectionBounds();
+  if (!bounds) return;
+  const td = getRubricCellTd(bounds.r1, bounds.c1);
+  const ta = td && td.querySelector("textarea.rubric-input");
+  if (ta) ta.focus({ preventScroll: true });
+}
+
+function clearRubricSelectedCells() {
+  commitActiveRubricInput();
+  const columns = getRubricColumns();
+  let changed = false;
+  rubricSelection.cells.forEach((key) => {
+    const [r, c] = key.split(":").map(Number);
+    if (getRubricValue(r, c) !== "" && setRubricValue(columns, r, c, "")) changed = true;
+  });
+  if (!changed) return;
+  saveState();
+  renderRubricGrid();
+  focusRubricSelectionStart();
+}
+
+/** Incolla `grid` dalla cella (startRow, startCol); un solo valore + più celle selezionate → lo ripete in tutte. */
+function pasteRubricGrid(grid, startRow, startCol) {
+  commitActiveRubricInput();
+  const columns = getRubricColumns();
+  const isSingleValue = grid.length === 1 && grid[0].length === 1;
+
+  if (isSingleValue && rubricSelection.cells.size > 1) {
+    rubricSelection.cells.forEach((key) => {
+      const [r, c] = key.split(":").map(Number);
+      setRubricValue(columns, r, c, grid[0][0]);
+    });
+  } else {
+    const rowCount = getRubricRowCount();
+    clearRubricSelection();
+    grid.forEach((values, dr) => {
+      const r = startRow + dr;
+      if (r >= rowCount) return;
+      values.forEach((value, dc) => {
+        const c = startCol + dc;
+        if (c >= columns.length) return;
+        setRubricValue(columns, r, c, value);
+        rubricSelection.cells.add(rubricCellKey(r, c)); // evidenzia l'area incollata
+      });
+    });
+  }
+  saveState();
+  renderRubricGrid();
+  focusRubricSelectionStart();
+}
+
+function initRubricClipboard() {
+  const isRubricActive = () => rubricView.classList.contains("active") && !document.querySelector("dialog[open]");
+  const activeRubricInput = () => {
+    const el = document.activeElement;
+    return el && el.classList && el.classList.contains("rubric-input") && rubricTable.contains(el) ? el : null;
+  };
+  const hasTextSelection = (ta) => ta && ta.selectionStart !== ta.selectionEnd;
+
+  document.addEventListener("copy", (event) => handleCopy(event, false));
+  document.addEventListener("cut", (event) => handleCopy(event, true));
+
+  function handleCopy(event, isCut) {
+    if (!isRubricActive() || rubricSelection.cells.size === 0) return;
+    const ta = activeRubricInput();
+    // Testo evidenziato dentro UNA cella (senza selezione multipla): copia normale.
+    if (rubricSelection.cells.size === 1 && hasTextSelection(ta)) return;
+    if (!ta && isEditableField(document.activeElement)) return;
+    const copied = copyRubricSelection();
+    if (!copied) return;
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", copied.text);
+    if (isCut) clearRubricSelectedCells();
+  }
+
+  document.addEventListener("paste", (event) => {
+    if (!isRubricActive()) return;
+    const ta = activeRubricInput();
+    if (!ta && rubricSelection.cells.size === 0) return;
+    if (!ta && isEditableField(document.activeElement)) return;
+
+    const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+    const internal = rubricSelection.clipboard;
+    let grid = null;
+    if (internal && text.replace(/\r\n?/g, "\n").replace(/\n$/, "") === internal.text) {
+      grid = internal.grid; // copiato da una griglia (anche di un'altra verifica)
+    } else if (text.includes("\t")) {
+      grid = parseRubricTsv(text); // più celle da Excel/Fogli
+    } else if (rubricSelection.cells.size > 1) {
+      grid = [[text]]; // stesso testo in tutte le celle selezionate
+    }
+    if (!grid) return; // testo normale in una sola cella: incolla del browser
+
+    let start = null;
+    const bounds = getRubricSelectionBounds();
+    if (bounds) {
+      start = { row: bounds.r1, col: bounds.c1 };
+    } else if (ta) {
+      start = getRubricTdCoords(ta.closest("td"));
+    }
+    if (!start) return;
+    event.preventDefault();
+    pasteRubricGrid(grid, start.row, start.col);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!isRubricActive() || rubricSelection.cells.size === 0) return;
+    const key = event.key.toLowerCase();
+    const mod = event.ctrlKey || event.metaKey;
+    const ta = activeRubricInput();
+    if (!ta && isEditableField(document.activeElement)) return;
+    if (!mod && (key === "delete" || key === "backspace") && rubricSelection.cells.size > 1) {
+      event.preventDefault();
+      clearRubricSelectedCells();
+    } else if (key === "escape") {
+      clearRubricSelection();
+    } else if (!mod && rubricSelection.cells.size > 1 && key.length === 1) {
+      // Si ricomincia a scrivere: la selezione multipla non serve più.
+      clearRubricSelection();
+    }
+  });
 }
 
 function parseNumber(value) {
