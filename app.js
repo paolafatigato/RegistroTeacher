@@ -693,8 +693,12 @@ function init() {
       if (!student.scores[testId][sectionId].comments) student.scores[testId][sectionId].comments = {};
       student.scores[testId][sectionId].comments[key] = text || null;
     }
-    trigger.classList.toggle("has-comment", Boolean(text));
-    trigger.title = text || "Aggiungi commento";
+    if (trigger._commentRefresh) {
+      trigger._commentRefresh();
+    } else {
+      trigger.classList.toggle("has-comment", Boolean(text));
+      trigger.title = text || "Aggiungi commento";
+    }
     // If this is a header trigger, also mark the TH so we can style the whole cell
     if (commentModalContext.type === "header") {
       const th = trigger.closest("th");
@@ -2660,6 +2664,8 @@ function createScoreInput(
     }
     // Aggiorna la cella FINAL della riga in-place, senza toccare il DOM dell'input attivo
     updateFinalCellInRow(input, student, getSelectedTest());
+    // Il colore del triangolino dipende anche dal voto (giudizio della griglia)
+    input.parentElement?.querySelector(".comment-trigger")?._commentRefresh?.();
   });
 
   // Navigazione tra celle con frecce della tastiera
@@ -2816,17 +2822,11 @@ function attachHeaderCommentTrigger(cell, obj, key, isSubsectionCategory = false
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella.
  */
 function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
-  const key = subsectionId ?? "direct";
-  const existingComment = student.scores?.[testId]?.[sectionId]?.comments?.[key];
-
   const trigger = document.createElement("div");
   trigger.className = "comment-trigger";
-  if (existingComment) {
-    trigger.classList.add("has-comment");
-    trigger.title = existingComment;
-  } else {
-    trigger.title = "Aggiungi commento";
-  }
+  trigger._commentRefresh = () =>
+    refreshCommentTrigger(trigger, student, testId, sectionId, subsectionId);
+  trigger._commentRefresh();
 
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2834,6 +2834,35 @@ function attachCommentTrigger(cell, student, testId, sectionId, subsectionId) {
   });
 
   cell.appendChild(trigger);
+}
+
+/**
+ * Giudizio scritto nella Griglia di valutazione per il voto attuale della cella
+ * (solo sottosezioni). Torna "" se non c'è voto o non c'è giudizio per quel voto.
+ */
+function getRubricJudgmentForCell(student, testId, sectionId, subsectionId) {
+  if (!subsectionId) return "";
+  const score = parseNumber(student.scores?.[testId]?.[sectionId]?.subsections?.[subsectionId]);
+  if (score === null || score === undefined) return "";
+  const test = state.tests.find((t) => t.id === testId);
+  for (const version of test?.versions ?? []) {
+    const section = version.sections?.find((s) => s.id === sectionId);
+    const sub = section?.subsections?.find((s) => s.id === subsectionId);
+    if (sub) return String(sub.rubric?.[score] ?? "").trim();
+  }
+  return "";
+}
+
+/**
+ * Colora il triangolino della cella solo se il commento è "vero": cioè non
+ * vuoto e diverso dal giudizio della Griglia per il voto inserito.
+ */
+function refreshCommentTrigger(trigger, student, testId, sectionId, subsectionId) {
+  const key = subsectionId ?? "direct";
+  const comment = String(student.scores?.[testId]?.[sectionId]?.comments?.[key] ?? "").trim();
+  const judgment = getRubricJudgmentForCell(student, testId, sectionId, subsectionId);
+  trigger.classList.toggle("has-comment", Boolean(comment) && comment !== judgment);
+  trigger.title = comment || "Aggiungi commento";
 }
 
 /**
