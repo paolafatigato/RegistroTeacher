@@ -350,6 +350,7 @@ function init() {
 
   testSelect.addEventListener("change", (event) => {
     state.selectedTestId = event.target.value;
+    alignSelectedClassToTest(state.selectedTestId);
     ensureVersionSelections();
     saveState();
     renderTestTable();
@@ -1465,6 +1466,7 @@ function renderTestsList() {
     evalBtn.textContent = "Valuta";
     evalBtn.addEventListener("click", () => {
       state.selectedTestId = test.id;
+      alignSelectedClassToTest(test.id);
       saveState();
       renderTestTable();
       setView("test");
@@ -4309,6 +4311,18 @@ function refreshNewTestClassesField() {
   });
 }
 
+/**
+ * Se la verifica è assegnata solo ad alcune classi e la classe selezionata
+ * non è tra quelle, seleziona la prima delle sue classi (così "Valuta" apre
+ * direttamente una classe che svolge davvero quella verifica).
+ */
+function alignSelectedClassToTest(testId) {
+  const test = state.tests.find((t) => t.id === testId);
+  const ids = (test?.classIds || []).filter((cid) => state.classes.some((c) => c.id === cid));
+  if (!ids.length || ids.includes(state.selectedClassId)) return;
+  state.selectedClassId = ids[0];
+}
+
 function getCheckedNewTestClassIds() {
   return Array.from(document.querySelectorAll(".new-test-target-class-checkbox:checked")).map((cb) => cb.value);
 }
@@ -4867,6 +4881,7 @@ function ensureClassState() {
   if (!state.selectedClassId || !hasSelected) {
     state.selectedClassId = state.classes[0]?.id ?? null;
   }
+  if (state.view === "test") alignSelectedClassToTest(state.selectedTestId);
 }
 
 function ensureTestState() {
@@ -5203,6 +5218,8 @@ function mergeFirebaseClasses(fbData) {
   if (!hasSelected && state.classes.length > 0) {
     state.selectedClassId = state.classes[0].id;
   }
+  // Al reload sulla Valutazione: apri una classe che svolge davvero la verifica
+  if (state.view === "test") alignSelectedClassToTest(state.selectedTestId);
 }
 
 function setFirebaseStatus(message, type = "info") {
