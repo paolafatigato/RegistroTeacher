@@ -700,6 +700,13 @@ function init() {
         const newCategory = document.getElementById("commentCategorySelect").value;
         categoryChanged = obj.category !== newCategory;
         obj.category = newCategory;
+        // Una categoria data alla sezione vale per tutte le sue sottosezioni
+        if (Array.isArray(obj.subsections)) {
+          obj.subsections.forEach((sub) => {
+            if ((sub.category || "") !== newCategory) categoryChanged = true;
+            sub.category = newCategory;
+          });
+        }
       }
     } else {
       const { student, testId, sectionId, subsectionId } = commentModalContext;
@@ -2026,6 +2033,7 @@ function renderTestTable() {
   headerRow.appendChild(versionHeader);
 
   const sections = activeVersion?.sections ?? [];
+  let columnCounter = 0;
 
   sections.forEach((section) => {
     if (!Array.isArray(section.subsections)) {
@@ -2038,8 +2046,13 @@ function renderTestTable() {
       saveState();
     }
 
+    const isFlat = Boolean(section.flat) && section.subsections.length === 1;
     const th = document.createElement("th");
     th.colSpan = section.subsections.length;
+    if (isFlat) {
+      th.rowSpan = 2;
+      th.classList.add("flat-header");
+    }
     const headerWrap = document.createElement("div");
     headerWrap.classList.add("section-header-cell");
 
@@ -2048,47 +2061,104 @@ function renderTestTable() {
     sectionNameInput.value = section.name || "Section";
     sectionNameInput.addEventListener("change", (event) => {
       section.name = event.target.value;
+      if (isFlat) section.subsections[0].name = section.name;
       saveState();
       renderTestTable();
     });
     headerWrap.appendChild(sectionNameInput);
 
-    const addColumnBtn = document.createElement("button");
-    addColumnBtn.type = "button";
-    addColumnBtn.classList.add("btn", "btn-secondary", "btn-small");
-    addColumnBtn.classList.add("section-add-btn");
-    addColumnBtn.textContent = "+";
-    addColumnBtn.title = "Aggiungi sottosezione";
-    addColumnBtn.addEventListener("click", () => {
-      const nextSubName = `${section.name}${section.subsections.length + 1}`;
-      const lastSubsection = section.subsections[section.subsections.length - 1];
-      section.subsections.push(createSubsection(lastSubsection, nextSubName));
-      saveState();
-      renderTestTable();
-    });
-    headerWrap.appendChild(addColumnBtn);
+    const sectionCategory = getSectionCategory(section);
+    if (sectionCategory) {
+      const catBadge = document.createElement("span");
+      catBadge.classList.add("subsection-category-badge");
+      catBadge.textContent = sectionCategory.charAt(0).toUpperCase();
+      catBadge.title = `${sectionCategory} (vale per tutta la sezione)`;
+      headerWrap.appendChild(catBadge);
+    }
 
-    const removeColumnBtn = document.createElement("button");
-    removeColumnBtn.type = "button";
-    removeColumnBtn.classList.add("btn", "btn-danger", "btn-small");
-    removeColumnBtn.classList.add("section-remove-btn");
-    removeColumnBtn.textContent = "×";
-    removeColumnBtn.title = "Elimina questa section e tutti i voti associati";
-    removeColumnBtn.addEventListener("click", () => {
-      if (confirm(`Sei sicuro di voler eliminare la section "${section.name}"? Tutti i voti andranno persi.`)) {
-        activeVersion.sections = activeVersion.sections.filter((item) => item.id !== section.id);
-        removeSectionScores(section.id, selectedTest?.id);
-        saveState();
-        renderTestTable();
-      }
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.classList.add("header-menu-btn");
+    menuBtn.textContent = "⋮";
+    menuBtn.title = "Azioni sulla sezione";
+    menuBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const canFlat = section.subsections.length === 1;
+      openHeaderMenu(menuBtn, [
+        isFlat
+          ? {
+              label: "Dividi in sottointestazioni",
+              icon: "☰",
+              action: () => {
+                section.flat = false;
+                saveState();
+                renderTestTable();
+              },
+            }
+          : {
+              label: "Solo intestazione (senza sottointestazioni)",
+              icon: "▭",
+              disabled: !canFlat,
+              hint: canFlat ? "" : "Elimina prima le altre sottosezioni",
+              action: () => {
+                section.flat = true;
+                section.subsections[0].name = section.name;
+                saveState();
+                renderTestTable();
+              },
+            },
+        isFlat
+          ? null
+          : {
+              label: "Aggiungi sottosezione",
+              icon: "＋",
+              action: () => {
+                const nextSubName = `${section.name}${section.subsections.length + 1}`;
+                const lastSubsection = section.subsections[section.subsections.length - 1];
+                section.subsections.push(createSubsection(lastSubsection, nextSubName));
+                saveState();
+                renderTestTable();
+              },
+            },
+        {
+          label: "Competenza e commento…",
+          icon: "🏷",
+          action: () => openSectionCommentDialog(th),
+        },
+        {
+          label: "Elimina sezione",
+          icon: "×",
+          danger: true,
+          action: () => {
+            if (confirm(`Sei sicuro di voler eliminare la section "${section.name}"? Tutti i voti andranno persi.`)) {
+              activeVersion.sections = activeVersion.sections.filter((item) => item.id !== section.id);
+              removeSectionScores(section.id, selectedTest?.id);
+              saveState();
+              renderTestTable();
+            }
+          },
+        },
+      ]);
     });
-    headerWrap.appendChild(removeColumnBtn);
+    headerWrap.appendChild(menuBtn);
 
     th.appendChild(headerWrap);
-    attachHeaderCommentTrigger(th, section, "comment");
+    attachHeaderCommentTrigger(th, section, "comment", true);
+    if (isFlat) {
+      th.classList.add("column-selectable");
+      const flatColIdx = columnCounter;
+      th.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) return;
+        if (event.target.closest("input, button, .comment-trigger")) return;
+        event.preventDefault();
+        prepareHeaderSelection();
+        selectEntireColumn(flatColIdx + 2);
+      });
+    }
     headerRow.appendChild(th);
 
     section.subsections.forEach((subsection, subsectionIndex) => {
+      const colIdxInSubHeader = columnCounter++;
       const subTh = document.createElement("th");
       subTh.classList.add("subheader");
       const isLastSubsection = subsectionIndex === section.subsections.length - 1;
@@ -2107,6 +2177,14 @@ function renderTestTable() {
       });
       subHeaderWrap.appendChild(subNameInput);
 
+      if (subsection.category) {
+        const catBadge = document.createElement("span");
+        catBadge.classList.add("subsection-category-badge");
+        catBadge.textContent = subsection.category.charAt(0).toUpperCase();
+        catBadge.title = subsection.category;
+        subHeaderWrap.appendChild(catBadge);
+      }
+
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.classList.add("subsection-remove");
@@ -2123,14 +2201,6 @@ function renderTestTable() {
       });
       subHeaderWrap.appendChild(removeBtn);
 
-      if (subsection.category) {
-        const catBadge = document.createElement("span");
-        catBadge.classList.add("subsection-category-badge");
-        catBadge.textContent = subsection.category.charAt(0).toUpperCase();
-        catBadge.title = subsection.category;
-        subHeaderWrap.appendChild(catBadge);
-      }
-
       subTh.appendChild(subHeaderWrap);
       attachHeaderCommentTrigger(subTh, subsection, "comment", true);
 
@@ -2145,8 +2215,6 @@ function renderTestTable() {
       subTh.addEventListener("mousedown", (event) => {
         if (event.button !== 0) return;
         if (event.target.closest("input, button, .comment-trigger")) return;
-        const colIdxInSubHeader = Array.from(subHeaderRow.children).indexOf(subTh);
-        if (colIdxInSubHeader === -1) return;
         event.preventDefault();
         prepareHeaderSelection();
         // +2: le colonne "Studente" e "Facilitata" hanno rowSpan e non hanno
@@ -2154,10 +2222,10 @@ function renderTestTable() {
         selectEntireColumn(colIdxInSubHeader + 2);
       });
 
-      subHeaderRow.appendChild(subTh);
+      if (!isFlat) subHeaderRow.appendChild(subTh);
 
       const weightTh = document.createElement("th");
-      weightTh.classList.add("subheader");
+      weightTh.classList.add("subheader", "weight-th");
       if (isLastSubsection) {
         weightTh.classList.add("section-divider");
       }
@@ -2798,6 +2866,62 @@ function createScoreInput(
  * Chiamata durante la digitazione per mostrare il voto finale in tempo reale.
  */
 /**
+ * Categoria (competenza) comune a tutte le sottosezioni di una sezione.
+ * Se le sottosezioni hanno categorie diverse, torna "" (nessuna comune).
+ */
+function getSectionCategory(section) {
+  const subs = section?.subsections ?? [];
+  if (subs.length === 0) return section?.category || "";
+  const first = subs[0].category || "";
+  return subs.every((sub) => (sub.category || "") === first) ? first : "";
+}
+
+/** Apre la finestra commento/competenza di una sezione (la stessa del triangolino). */
+function openSectionCommentDialog(th) {
+  const trigger = th.querySelector(":scope > .comment-trigger");
+  if (trigger) trigger.click();
+}
+
+/**
+ * Piccolo menu a comparsa ancorato a un bottone. Ogni voce:
+ * { label, icon, action, danger?, disabled?, hint? }. null = ignorata.
+ */
+function openHeaderMenu(anchor, items) {
+  document.querySelectorAll(".header-menu").forEach((el) => el.remove());
+  const menu = document.createElement("div");
+  menu.className = "header-menu";
+  items.filter(Boolean).forEach((item) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "header-menu-item" + (item.danger ? " is-danger" : "");
+    btn.disabled = Boolean(item.disabled);
+    btn.innerHTML = '<span class="header-menu-icon"></span><span class="header-menu-label"></span>';
+    btn.querySelector(".header-menu-icon").textContent = item.icon || "";
+    btn.querySelector(".header-menu-label").textContent = item.label;
+    if (item.hint) btn.title = item.hint;
+    btn.addEventListener("click", () => {
+      close();
+      item.action();
+    });
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  const left = Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${r.bottom + 4}px`;
+  function close(e) {
+    if (e && e.type === "keydown" && e.key !== "Escape") return;
+    if (e && e.type === "mousedown" && menu.contains(e.target)) return;
+    menu.remove();
+    document.removeEventListener("mousedown", close, true);
+    document.removeEventListener("keydown", close, true);
+  }
+  document.addEventListener("mousedown", close, true);
+  document.addEventListener("keydown", close, true);
+}
+
+/**
  * Aggiunge il trigger (bordo destro cliccabile) per il commento di una cella di intestazione
  * (section, subsection, peso, punteggio massimo). Salva il commento su obj[key].
  */
@@ -2823,7 +2947,10 @@ function attachHeaderCommentTrigger(cell, obj, key, isSubsectionCategory = false
     const categorySelect = document.getElementById("commentCategorySelect");
     if (isSubsectionCategory) {
       categoryField.style.display = "";
-      populateCategorySelect(categorySelect, obj.category || "");
+      populateCategorySelect(
+        categorySelect,
+        Array.isArray(obj.subsections) ? getSectionCategory(obj) : obj.category || ""
+      );
     } else {
       categoryField.style.display = "none";
     }
@@ -3849,9 +3976,11 @@ function cloneSections(sections) {
     name: section.name,
     weight: section.weight,
     max: section.max,
+    flat: Boolean(section.flat),
     subsections: (section.subsections ?? []).map((subsection) => ({
       id: createId("sub"),
       name: subsection.name,
+      category: subsection.category ?? "",
       weight: subsection.weight,
       max: subsection.max,
     })),

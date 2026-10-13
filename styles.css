@@ -526,57 +526,84 @@ h1, h2, h3 {
   cursor: default;
 }
 
-/* Overlay buttons above header text to avoid layout shift */
-/* Overlay header buttons: absolute within the TH (thead th is positioning context) */
-.section-header-cell .btn,
+/* Pulsanti di intestazione: stanno nel flusso (nessuna sovrapposizione).
+   ⋮ (menu sezione) sempre visibile ma discreto; × della sottointestazione
+   compare al passaggio del mouse nello spazio che gli è già riservato. */
+.header-menu-btn,
 .subheader-cell .subsection-remove {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%) scale(0.95);
-  z-index: 4;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  box-sizing: border-box;
-  height: 30px;
-  min-width: 30px;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
-.section-header-cell:focus-within .btn,
-.section-header-cell:hover .btn,
-.subheader-cell:focus-within .subsection-remove,
-.subheader-cell:hover .subsection-remove {
+.header-menu-btn {
+  background: transparent;
+  color: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  opacity: 0.55;
+}
+.header-menu-btn:hover,
+.header-menu-btn:focus-visible,
+.section-header-cell:hover .header-menu-btn {
   opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-50%) scale(1.05);
+  background: rgba(255, 255, 255, 0.25);
 }
 
-/* Position add and remove separately so + remains visible */
-.section-header-cell .section-add-btn {
-  right: 46px;
-  border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-.section-header-cell .section-remove-btn {
-  right: 8px;
-  border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
 .subheader-cell .subsection-remove {
-  right: 8px;
+  font-size: 14px;
+  box-shadow: none;
+  opacity: 0;
+}
+.subheader-cell:hover .subsection-remove,
+.subheader-cell:focus-within .subsection-remove {
+  opacity: 1;
 }
 
-/* Ensure buttons are vertically centered inside the TH for all header rows */
-.grade-table thead .section-header-cell .btn,
-.grade-table thead .subheader-cell .subsection-remove {
-  top: 50%;
-  transform: translateY(-50%) scale(0.95);
-  z-index: 6;
+.header-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 230px;
+  padding: 6px;
+  background: var(--white);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(109, 134, 200, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dark);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.header-menu-item:hover:not(:disabled) { background: rgba(109, 134, 200, 0.14); }
+.header-menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.header-menu-item.is-danger { color: #a12727; }
+.header-menu-item.is-danger:hover:not(:disabled) { background: #ffe1e1; }
+.header-menu-icon { width: 18px; text-align: center; flex: 0 0 auto; }
+
+/* Intestazione "solo header": occupa anche la riga delle sottointestazioni */
+.grade-table th.flat-header { vertical-align: middle; }
 
 /* Ensure buttons are positioned relative to the TH, not to inner wrapper */
 .grade-table thead th { position: relative; }
@@ -1355,19 +1382,6 @@ h1, h2, h3 {
 }
 
 /* Effetto hover/focus per bottoni e input nelle celle header/subheader */
-.section-header-cell:hover .btn,
-.section-header-cell:focus-within .btn,
-.subheader-cell:hover .subsection-remove,
-.subheader-cell:focus-within .subsection-remove {
-  max-width: 36px;
-  opacity: 1;
-  padding: 6px 10px;
-  margin-left: 6px;
-  border-width: 1px;
-  pointer-events: auto;
-  transform: scale(1.05);
-}
-
 .section-header-cell:hover input,
 .section-header-cell:focus-within input {
   background: var(--white);
@@ -3400,4 +3414,10 @@ h1, h2, h3 {
 .check-bonus-comment:focus {
   outline: none;
   border-color: var(--glaucous);
+}
+/* Numero del peso in azzurro */
+.grade-table th.weight-th input,
+.grade-table th.weight-th input:focus {
+  color: #1e90e0;
+  font-weight: 700;
 }
