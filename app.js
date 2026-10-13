@@ -2182,7 +2182,7 @@ function renderTestTable() {
       }
       const maxInput = document.createElement("input");
       maxInput.type = "number";
-      maxInput.step = "0.1";
+      maxInput.step = "any";
       maxInput.min = "0";
       maxInput.value = getSubsectionMax(
         section,
@@ -2645,7 +2645,7 @@ function createScoreInput(
   const input = document.createElement("input");
   input.type = "number";
   input.classList.add("score-input"); // solo queste celle si copiano/incollano
-  input.step = "0.1";
+  input.step = "any";
   input.min = "0";
   input.disabled = Boolean(isDisabled);
 
