@@ -76,7 +76,8 @@ let fbUser = null;
 let fbClassesUnsubscribe = null;  // listener classi (read-only da classroomanager)
 let fbGradingUnsubscribe = null;  // listener voti/test (read-write, nostro)
 let fbSaveTimer = null;           // debounce per non scrivere su Firebase a ogni tasto
-let fbIgnoreGrading = false;      // evita loop write→listen→write
+let fbGradingLoaded = false;      // true dopo il primo snapshot dei voti: prima di allora NON si scrive (si sovrascriverebbe il cloud con la cache locale)
+let fbLastSavedAt = 0;            // "savedAt" dell'ultima nostra scrittura: serve a riconoscere l'eco del listener
 let tableRenderTimer = null;      // debounce per non ricaricare la tabella durante navigazione frecce
 let commentModalContext = null;   // contesto cella aperta nel dialog commento
 let isNavigatingWithArrows = false; // flag per evitare renderTestTable durante navigazione frecce
@@ -4592,9 +4593,12 @@ function saveState() {
 
   // Salva voti e test su Firebase con debounce (500ms)
   // così non spammiamo il DB a ogni tasto premuto
-  if (fbDb && fbUser) {
+  if (fbDb && fbUser && fbGradingLoaded) {
     clearTimeout(fbSaveTimer);
-    fbSaveTimer = setTimeout(() => saveGradingToFirebase(), 500);
+    fbSaveTimer = setTimeout(() => {
+      fbSaveTimer = null;
+      saveGradingToFirebase();
+    }, 500);
   }
 }
 
@@ -4687,9 +4691,9 @@ function performRedo() {
  *   /grading/testVersions  → { studentId: { testId: versionId } }
  */
 function saveGradingToFirebase() {
-  if (!fbDb || !fbUser) return;
-  fbIgnoreGrading = true; // evita che il listener ri-scriva quello che abbiamo appena scritto
+  if (!fbDb || !fbUser || !fbGradingLoaded) return;
   const path = `/users/${fbUser.uid}/grading`;
+  fbLastSavedAt = Math.max(Date.now(), fbLastSavedAt + 1);
   const data = {
     tests: state.tests,
     settings: state.settings,
@@ -4702,15 +4706,15 @@ function saveGradingToFirebase() {
     // l'INTERO nodo "grading", quindi se non le includessimo qui verrebbero
     // cancellate ad ogni salvataggio dei voti.
     archivedTests: state.archivedTests || [],
-    savedAt: Date.now(),
+    savedAt: fbLastSavedAt,
   };
-  fbDb.ref(path).set(data)
+  // Firebase rifiuta l'intera scrittura se trova un valore undefined: il giro
+  // JSON li elimina (e trasforma NaN in null) invece di perdere il salvataggio.
+  fbDb.ref(path).set(JSON.parse(JSON.stringify(data)))
     .then(() => {
       setFirebaseStatus("🟢 Voti sincronizzati su Firebase");
-      setTimeout(() => { fbIgnoreGrading = false; }, 2000);
     })
     .catch((err) => {
-      fbIgnoreGrading = false;
       setFirebaseStatus(`❌ Errore salvataggio voti: ${err.message}`, "error");
     });
 }
@@ -5120,6 +5124,8 @@ function initFirebase() {
         fbGradingUnsubscribe = null;
       }
       clearTimeout(fbSaveTimer);
+      fbSaveTimer = null;
+      fbGradingLoaded = false;
       state.classes = [];
       state._fbGrading = null;
       render();
@@ -5163,15 +5169,21 @@ function startClassesListener() {
     "value",
     (snapshot) => {
       const data = snapshot.val();
-      // I colori delle classi si riallineano SEMPRE (anche subito dopo un nostro salvataggio)
-      if (data && syncClassColorsFromGrading(data.settings) && fbIgnoreGrading) render();
-      // Ignora l'aggiornamento se siamo stati noi a scrivere (evita loop)
-      if (fbIgnoreGrading) return;
+      // Da qui in poi lo stato locale è allineato al cloud e si può scrivere
+      fbGradingLoaded = true;
       if (!data) return; // nessun dato grading ancora: va bene, partiamo vuoti
+      // Eco di una nostra scrittura (riconosciuta dal suo savedAt): non riapplicarla
+      if (data.savedAt && data.savedAt === fbLastSavedAt) {
+        if (syncClassColorsFromGrading(data.settings)) render();
+        return;
+      }
+      // Stiamo per salvare modifiche locali non ancora inviate: non sovrascriverle
+      if (fbSaveTimer) return;
       applyFirebaseGrading(data);
     },
     (error) => {
       console.error("Firebase grading error:", error);
+      setFirebaseStatus(`❌ Voti non sincronizzati: ${error.message}`, "error");
     }
   );
 }
@@ -5250,18 +5262,12 @@ function applyFirebaseGrading(data) {
   // Applica subito agli studenti già caricati
   state.classes.forEach((cls) => {
     cls.students.forEach((student) => {
-      if (state._studentScores[student.id]) {
-        student.scores = state._studentScores[student.id];
-      }
-      if (state._studentTestVersions[student.id]) {
-        student.testVersions = state._studentTestVersions[student.id];
-      }
-      if (state._studentChecks[student.id]) {
-        student.checks = state._studentChecks[student.id];
-      }
-      if (state._studentParentConfig[student.id]) {
-        student.parentConfig = state._studentParentConfig[student.id];
-      }
+      // Sostituzione completa (anche con {}): un voto cancellato su un altro
+      // dispositivo deve sparire anche qui, non restare come valore vecchio.
+      student.scores = state._studentScores[student.id] || {};
+      student.testVersions = state._studentTestVersions[student.id] || {};
+      student.checks = state._studentChecks[student.id] || {};
+      student.parentConfig = state._studentParentConfig[student.id] || {};
       student.facilitated = state._studentFacilitated[student.id] === true;
     });
   });
