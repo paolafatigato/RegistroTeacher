@@ -77,7 +77,9 @@ let fbClassesUnsubscribe = null;  // listener classi (read-only da classroomanag
 let fbGradingUnsubscribe = null;  // listener voti/test (read-write, nostro)
 let fbSaveTimer = null;           // debounce per non scrivere su Firebase a ogni tasto
 let fbGradingLoaded = false;      // true dopo il primo snapshot dei voti: prima di allora NON si scrive (si sovrascriverebbe il cloud con la cache locale)
-let fbLastSavedAt = 0;            // "savedAt" dell'ultima nostra scrittura: serve a riconoscere l'eco del listener
+let fbBaseline = null;            // ultimo stato dei voti che sappiamo essere sul cloud: le scritture inviano SOLO ciò che è cambiato rispetto a questo
+let fbPendingWrites = 0;          // scritture inviate e non ancora confermate dal server
+let fbDeferredSnapshot = null;    // aggiornamento remoto rimandato perché si sta scrivendo in un campo di testo
 let tableRenderTimer = null;      // debounce per non ricaricare la tabella durante navigazione frecce
 let commentModalContext = null;   // contesto cella aperta nel dialog commento
 let isNavigatingWithArrows = false; // flag per evitare renderTestTable durante navigazione frecce
@@ -4604,6 +4606,10 @@ function saveState() {
 
   // Salva voti e test su Firebase con debounce (500ms)
   // così non spammiamo il DB a ogni tasto premuto
+  scheduleGradingSave();
+}
+
+function scheduleGradingSave() {
   if (fbDb && fbUser && fbGradingLoaded) {
     clearTimeout(fbSaveTimer);
     fbSaveTimer = setTimeout(() => {
@@ -4611,6 +4617,15 @@ function saveState() {
       saveGradingToFirebase();
     }, 500);
   }
+}
+
+/** Invia subito le modifiche in attesa (es. quando l'app va in background sul telefono). */
+function flushGradingSave() {
+  if (!(fbDb && fbUser && fbGradingLoaded)) return;
+  saveState(); // registra anche un valore digitato ma non ancora "confermato" con il blur
+  clearTimeout(fbSaveTimer);
+  fbSaveTimer = null;
+  saveGradingToFirebase();
 }
 
 /** Riapplica uno snapshot (stringa JSON di buildUndoSnapshot) allo stato live. */
@@ -4694,7 +4709,10 @@ function performRedo() {
 }
 
 /**
- * Scrive voti, test e flag DSA su /users/{uid}/grading/
+ * Scrive su /users/{uid}/grading/ SOLO ciò che è cambiato da questo dispositivo
+ * (aggiornamento per singolo campo, non sostituzione dell'intero nodo).
+ * Così due dispositivi che modificano celle diverse non si cancellano a vicenda,
+ * e un dispositivo con dati vecchi non può più sovrascrivere il lavoro degli altri.
  * Struttura:
  *   /grading/tests         → array delle verifiche (struttura, sezioni, pesi)
  *   /grading/scores        → { studentId: { testId: { sectionId: ... } } }
@@ -4702,32 +4720,258 @@ function performRedo() {
  *   /grading/testVersions  → { studentId: { testId: versionId } }
  */
 function saveGradingToFirebase() {
-  if (!fbDb || !fbUser || !fbGradingLoaded) return;
-  const path = `/users/${fbUser.uid}/grading`;
-  fbLastSavedAt = Math.max(Date.now(), fbLastSavedAt + 1);
-  const data = {
-    tests: state.tests,
-    settings: state.settings,
-    scores: buildStudentScoresMap(),
-    facilitated: buildStudentFacilitatedMap(),
-    testVersions: buildStudentTestVersionsMap(),
-    checks: buildStudentChecksMap(),
-    parentConfig: buildStudentParentConfigMap(),
-    // Includiamo anche le verifiche archiviate: questa scrittura sostituisce
-    // l'INTERO nodo "grading", quindi se non le includessimo qui verrebbero
-    // cancellate ad ogni salvataggio dei voti.
-    archivedTests: state.archivedTests || [],
-    savedAt: fbLastSavedAt,
+  if (!fbDb || !fbUser || !fbGradingLoaded || !fbBaseline) return;
+  const previousBaseline = fbBaseline;
+  const current = buildGradingPayload();
+  const ops = diffGrading(previousBaseline, current);
+  if (ops.length === 0) return;
+
+  const updates = {};
+  ops.forEach((op) => {
+    updates[op.path.join("/")] = op.value === undefined ? null : op.value;
+  });
+
+  // Da ora in avanti il cloud conterrà questo stato (le modifiche altrui
+  // arriveranno dal listener e verranno unite, non sovrascritte).
+  fbBaseline = current;
+  fbPendingWrites++;
+  const done = () => {
+    fbPendingWrites = Math.max(0, fbPendingWrites - 1);
+    if (fbPendingWrites === 0) persistBaseline();
   };
-  // Firebase rifiuta l'intera scrittura se trova un valore undefined: il giro
-  // JSON li elimina (e trasforma NaN in null) invece di perdere il salvataggio.
-  fbDb.ref(path).set(JSON.parse(JSON.stringify(data)))
-    .then(() => {
-      setFirebaseStatus("🟢 Voti sincronizzati su Firebase");
-    })
-    .catch((err) => {
-      setFirebaseStatus(`❌ Errore salvataggio voti: ${err.message}`, "error");
+  try {
+    fbDb.ref(`/users/${fbUser.uid}/grading`).update(updates)
+      .then(() => {
+        done();
+        setFirebaseStatus("🟢 Voti sincronizzati su Firebase");
+      })
+      .catch((err) => {
+        done();
+        if (fbBaseline === current) fbBaseline = previousBaseline; // riproverà al prossimo salvataggio
+        setFirebaseStatus(`❌ Errore salvataggio voti: ${err.message}`, "error");
+      });
+  } catch (err) {
+    fbPendingWrites = Math.max(0, fbPendingWrites - 1);
+    if (fbBaseline === current) fbBaseline = previousBaseline;
+    setFirebaseStatus(`❌ Errore salvataggio voti: ${err.message}`, "error");
+  }
+}
+
+// ── Sincronizzazione voti: confronto per campo ──────────────────────
+
+function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]));
+  }
+  return false;
+}
+
+/** Elimina null/undefined/NaN e contenitori vuoti: è ciò che Firebase non salva, così locale e cloud sono confrontabili. */
+function pruneEmpty(v) {
+  if (Array.isArray(v)) {
+    const arr = v.map((x) => { const p = pruneEmpty(x); return p === undefined ? null : p; });
+    return arr.some((x) => x !== null) ? arr : undefined;
+  }
+  if (isPlainObject(v)) {
+    const out = {};
+    Object.keys(v).forEach((k) => {
+      const p = pruneEmpty(v[k]);
+      if (p !== undefined) out[k] = p;
     });
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  if (v === null || v === undefined) return undefined;
+  if (typeof v === "number" && !isFinite(v)) return undefined;
+  return v;
+}
+
+function canonGrading(obj) {
+  return pruneEmpty(JSON.parse(JSON.stringify(obj))) || {};
+}
+
+function firebaseToArray(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object") return Object.values(v);
+  return [];
+}
+
+/** Stato locale dei voti nella stessa forma in cui sta su Firebase. */
+function buildGradingPayload() {
+  // Gli studenti non presenti nelle classi caricate (o classi non ancora caricate)
+  // mantengono i voti già noti: non vanno scambiati per voti cancellati.
+  const presentIds = new Set();
+  state.classes.forEach((cls) => cls.students.forEach((s) => presentIds.add(s.id)));
+  const withKnown = (known, built) => {
+    const map = { ...(known || {}) };
+    presentIds.forEach((id) => delete map[id]);
+    return Object.assign(map, built);
+  };
+  return canonGrading({
+    tests: state.tests,
+    archivedTests: state.archivedTests || [],
+    settings: state.settings,
+    scores: withKnown(state._studentScores, buildStudentScoresMap()),
+    testVersions: withKnown(state._studentTestVersions, buildStudentTestVersionsMap()),
+    facilitated: withKnown(state._studentFacilitated, buildStudentFacilitatedMap()),
+    checks: withKnown(state._studentChecks, buildStudentChecksMap()),
+    parentConfig: withKnown(state._studentParentConfig, buildStudentParentConfigMap()),
+  });
+}
+
+/** Dati ricevuti da Firebase nella stessa forma di buildGradingPayload(). */
+function remoteToPayload(data) {
+  const raw = JSON.parse(JSON.stringify(data || {}));
+  const toTests = (v) => firebaseToArray(v).filter(Boolean).map(normalizeTestFromFirebase);
+  return canonGrading({
+    tests: toTests(raw.tests),
+    archivedTests: toTests(raw.archivedTests),
+    settings: raw.settings,
+    scores: raw.scores,
+    testVersions: raw.testVersions,
+    facilitated: raw.facilitated,
+    checks: raw.checks,
+    parentConfig: raw.parentConfig,
+  });
+}
+
+const GRADING_TEST_ARRAYS = ["tests", "archivedTests"];
+
+function diffGradingValues(a, b, path, out, guard) {
+  if (deepEqual(a, b)) return;
+  if (isPlainObject(a) && isPlainObject(b)) {
+    new Set([...Object.keys(a), ...Object.keys(b)]).forEach((k) => {
+      diffGradingValues(a[k], b[k], [...path, k], out, guard);
+    });
+    return;
+  }
+  out.push({ path, value: b, guard });
+}
+
+function sameIdSequence(a, b) {
+  return a.length === b.length && a.every((el, i) => el && b[i] && el.id !== undefined && el.id === b[i].id);
+}
+
+/**
+ * Elenco delle differenze { path, value } tra due stati. Un valore undefined = campo cancellato.
+ * Per le verifiche, se l'elenco è lo stesso (stessi id nello stesso ordine) si confronta
+ * verifica per verifica; se ne sono state aggiunte/tolte/riordinate si riscrive l'intero elenco.
+ */
+function diffGrading(base, cur) {
+  const out = [];
+  new Set([...Object.keys(base), ...Object.keys(cur)]).forEach((key) => {
+    const a = base[key];
+    const b = cur[key];
+    if (GRADING_TEST_ARRAYS.includes(key) && Array.isArray(a) && Array.isArray(b) && sameIdSequence(a, b)) {
+      b.forEach((el, i) => diffGradingValues(a[i], el, [key, i], out, { arr: key, idx: i, id: el.id }));
+    } else {
+      diffGradingValues(a, b, [key], out);
+    }
+  });
+  return out;
+}
+
+/** Riapplica modifiche locali non ancora inviate sopra lo stato più recente del cloud. */
+function applyGradingOps(payload, ops) {
+  const result = JSON.parse(JSON.stringify(payload));
+  ops.forEach((op) => {
+    if (op.guard) {
+      const el = result[op.guard.arr] && result[op.guard.arr][op.guard.idx];
+      // La verifica è stata tolta/spostata altrove nel frattempo: non ricreare un pezzo orfano
+      if (!el || el.id !== op.guard.id) return;
+    }
+    let node = result;
+    for (let i = 0; i < op.path.length - 1; i++) {
+      const k = op.path[i];
+      if (node[k] === null || typeof node[k] !== "object") node[k] = {};
+      node = node[k];
+    }
+    const last = op.path[op.path.length - 1];
+    if (op.value === undefined) delete node[last];
+    else node[last] = JSON.parse(JSON.stringify(op.value));
+  });
+  return pruneEmpty(result) || {};
+}
+
+function baselineStorageKey() {
+  return fbUser ? `${STORAGE_KEY}-cloud-baseline-${fbUser.uid}` : null;
+}
+
+/**
+ * L'ultimo stato confermato dal cloud viene ricordato anche tra una sessione e l'altra:
+ * se l'app viene chiusa/sospesa sul telefono prima che una modifica parta, alla riapertura
+ * si capisce cosa è stato modificato qui e lo si invia invece di sovrascriverlo col cloud.
+ */
+function persistBaseline() {
+  const key = baselineStorageKey();
+  if (!key || !fbBaseline) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(fbBaseline));
+  } catch (e) { /* spazio esaurito: si perde solo il recupero tra sessioni */ }
+}
+
+function loadPersistedBaseline() {
+  const key = baselineStorageKey();
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** True se l'utente sta scrivendo in un campo di testo: ricostruire la pagina ora gli farebbe perdere ciò che digita. */
+function isTypingInTextField() {
+  const el = document.activeElement;
+  if (!el || el.classList.contains("score-input")) return false; // la tabella voti ripristina da sola il focus
+  if (el.tagName === "TEXTAREA" || el.isContentEditable) return true;
+  if (el.tagName !== "INPUT") return false;
+  return !["checkbox", "radio", "button", "submit", "range", "color", "file"].includes(el.type);
+}
+
+function handleGradingSnapshot(snapshot) {
+  const hasData = snapshot.exists();
+  const remote = remoteToPayload(hasData ? snapshot.val() : {});
+  const first = !fbGradingLoaded;
+  const local = buildGradingPayload();
+
+  // Stato di partenza rispetto al quale calcolare "cosa ho modificato io"
+  let base = fbBaseline;
+  if (first) {
+    base = loadPersistedBaseline();
+    // Cloud ancora senza verifiche: la cache locale è l'unica fonte, va inviata
+    if (!hasData || (!base && !(remote.tests && remote.tests.length))) base = {};
+  }
+  const pending = base ? diffGrading(base, local) : [];
+
+  fbBaseline = remote;
+  fbGradingLoaded = true;
+  if (fbPendingWrites === 0) persistBaseline();
+
+  if (!first && deepEqual(remote, local)) return; // niente di nuovo (es. eco di una nostra scrittura)
+  if (hasData) {
+    // Cloud + le mie modifiche non ancora inviate: nessuna delle due parti va persa
+    applyFirebaseGrading(pending.length ? applyGradingOps(remote, pending) : remote);
+  }
+  if (pending.length) scheduleGradingSave();
+}
+
+function flushDeferredGradingSnapshot() {
+  if (!fbDeferredSnapshot || isTypingInTextField()) return;
+  const snapshot = fbDeferredSnapshot;
+  fbDeferredSnapshot = null;
+  handleGradingSnapshot(snapshot);
 }
 
 /** Costruisce una mappa { studentId: { testId: { sectionId: ... } } } */
@@ -5232,7 +5476,14 @@ function initFirebase() {
   fbAuth = firebase.auth();
   fbDb = firebase.database();
 
-  const loginBtn = document.getElementById("loginBtn");
+  // Telefono: quando l'app va in background il timer di salvataggio può non
+  // scattare mai. Si invia subito tutto ciò che è in attesa.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushGradingSave();
+  });
+  window.addEventListener("pagehide", flushGradingSave);
+  // Aggiornamenti remoti rimandati mentre si scriveva in un campo di testo
+  document.addEventListener("focusout", () => setTimeout(flushDeferredGradingSnapshot, 150));
   const logoutBtn = document.getElementById("logoutBtn");
   const userInfo = document.getElementById("userInfo");
   const firebaseBadge = document.getElementById("firebaseBadge");
@@ -5269,6 +5520,9 @@ function initFirebase() {
       clearTimeout(fbSaveTimer);
       fbSaveTimer = null;
       fbGradingLoaded = false;
+      fbBaseline = null;
+      fbPendingWrites = 0;
+      fbDeferredSnapshot = null;
       state.classes = [];
       state._fbGrading = null;
       render();
@@ -5311,18 +5565,14 @@ function startClassesListener() {
   fbGradingUnsubscribe = gradingRef.on(
     "value",
     (snapshot) => {
-      const data = snapshot.val();
-      // Da qui in poi lo stato locale è allineato al cloud e si può scrivere
-      fbGradingLoaded = true;
-      if (!data) return; // nessun dato grading ancora: va bene, partiamo vuoti
-      // Eco di una nostra scrittura (riconosciuta dal suo savedAt): non riapplicarla
-      if (data.savedAt && data.savedAt === fbLastSavedAt) {
-        if (syncClassColorsFromGrading(data.settings)) render();
+      // Si sta scrivendo in un campo di testo: l'aggiornamento remoto viene
+      // applicato appena si esce dal campo, per non cancellare ciò che si digita.
+      if (fbGradingLoaded && isTypingInTextField()) {
+        fbDeferredSnapshot = snapshot;
         return;
       }
-      // Stiamo per salvare modifiche locali non ancora inviate: non sovrascriverle
-      if (fbSaveTimer) return;
-      applyFirebaseGrading(data);
+      fbDeferredSnapshot = null;
+      handleGradingSnapshot(snapshot);
     },
     (error) => {
       console.error("Firebase grading error:", error);
@@ -5373,26 +5623,22 @@ function normalizeTestFromFirebase(test) {
 }
 
 /**
- * Applica i dati di grading arrivati da Firebase allo state.
- * Chiamata dal listener real-time OPPURE all'avvio per caricare i dati da un altro dispositivo.
+ * Applica allo state i dati di grading (cloud, già uniti alle modifiche locali in attesa).
+ * `data` ha la forma di remoteToPayload()/buildGradingPayload().
  */
-function applyFirebaseGrading(data) {
-  // Aggiorna i test (struttura verifiche, sezioni, pesi)
-  // Firebase: array vuoti → null, array → oggetto {"0":{...}} se le chiavi non sono tutte int consecutivi
-  const rawTests = Array.isArray(data.tests)
-    ? data.tests
-    : (data.tests && typeof data.tests === 'object' ? Object.values(data.tests) : []);
-  if (rawTests.length > 0) {
-    state.tests = rawTests.map(normalizeTestFromFirebase);
-    state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
-  }
+function applyFirebaseGrading(payload) {
+  // Copia: state non deve condividere oggetti con fbBaseline, altrimenti le
+  // modifiche locali si confonderebbero con lo stato "già sul cloud".
+  const data = JSON.parse(JSON.stringify(payload));
+
+  state.tests = firebaseToArray(data.tests).filter(Boolean).map(normalizeTestFromFirebase);
+  state.tests.forEach((t) => { ensureTestVersions(t); ensureTestMeta(t); });
 
   // Verifiche archiviate (a inizio anno nuovo, da Classroom Manager): usabili
   // come modello per ricreare rapidamente una nuova verifica.
-  const rawArchivedTests = Array.isArray(data.archivedTests)
-    ? data.archivedTests
-    : (data.archivedTests && typeof data.archivedTests === 'object' ? Object.values(data.archivedTests) : []);
-  state.archivedTests = rawArchivedTests.filter(Boolean).map(normalizeTestFromFirebase);
+  state.archivedTests = firebaseToArray(data.archivedTests).filter(Boolean).map(normalizeTestFromFirebase);
+
+  state.settings = normalizeSettings(data.settings);
 
   state._gradingFromFirebase = true; // da ora i test sono quelli veri di Firebase
   // Memorizza le mappe in state così mergeFirebaseClasses le userà
@@ -5427,12 +5673,15 @@ function applyFirebaseGrading(data) {
  * Ogni studente ha i campi "fullName" (usato come ID stabile) e "displayName" (visualizzato)
  */
 function mergeFirebaseClasses(fbData) {
-  // Usa i dati di grading da Firebase o dalla cache locale
-  const studentScores = state._studentScores || buildStudentScoresMap();
-  const studentTestVersions = state._studentTestVersions || buildStudentTestVersionsMap();
-  const studentFacilitated = state._studentFacilitated || buildStudentFacilitatedMap();
-  const studentChecks = state._studentChecks || buildStudentChecksMap();
-  const studentParentConfig = state._studentParentConfig || buildStudentParentConfigMap();
+  // Stato attuale (voti già noti + modifiche locali non ancora inviate): le
+  // classi vengono ricostruite da qui, così un cambio in Classroom Manager
+  // non fa perdere ciò che si sta scrivendo.
+  const knownGrading = buildGradingPayload();
+  const studentScores = knownGrading.scores || {};
+  const studentTestVersions = knownGrading.testVersions || {};
+  const studentFacilitated = knownGrading.facilitated || {};
+  const studentChecks = knownGrading.checks || {};
+  const studentParentConfig = knownGrading.parentConfig || {};
 
   // Firebase converte gli array JS in oggetti { "0": {...}, "1": {...} }
   const rawClasses = Array.isArray(fbData) ? fbData : Object.values(fbData);
@@ -5489,6 +5738,11 @@ function mergeFirebaseClasses(fbData) {
 
   newClasses.sort((a, b) => a.name.localeCompare(b.name, "it"));
   state.classes = newClasses;
+  state._studentScores = studentScores;
+  state._studentTestVersions = studentTestVersions;
+  state._studentFacilitated = studentFacilitated;
+  state._studentChecks = studentChecks;
+  state._studentParentConfig = studentParentConfig;
   state._cmClassColors = cmColors;
   migrateLegacyFacilitated();
 
@@ -7399,22 +7653,16 @@ function getClassColor(classId) {
     || null;
 }
 
-/**
- * Riallinea state.settings.classColors con ciò che c'è su Firebase
- * (users/{uid}/grading/settings/classColors). Ritorna true se è cambiato qualcosa.
- */
-function syncClassColorsFromGrading(settings) {
-  const incoming = settings && settings.classColors;
-  if (!incoming || typeof incoming !== "object") return false;
-  if (!state.settings) state.settings = { subjects: [], categories: [], subsectionCategories: [...DEFAULT_SUBSECTION_CATEGORIES], classColors: {} };
-  const current = state.settings.classColors || {};
-  const keys = new Set([...Object.keys(current), ...Object.keys(incoming)]);
-  let changed = false;
-  keys.forEach((k) => {
-    if (String(current[k] || "").toLowerCase() !== String(incoming[k] || "").toLowerCase()) changed = true;
-  });
-  if (changed) state.settings.classColors = { ...incoming };
-  return changed;
+/** Impostazioni (materie, categorie, colori classi) nella forma attesa, anche se Firebase ha omesso array/oggetti vuoti. */
+function normalizeSettings(raw) {
+  const s = raw && typeof raw === "object" ? raw : {};
+  return {
+    ...s,
+    subjects: firebaseToArray(s.subjects),
+    categories: firebaseToArray(s.categories),
+    subsectionCategories: s.subsectionCategories ? firebaseToArray(s.subsectionCategories) : [...DEFAULT_SUBSECTION_CATEGORIES],
+    classColors: s.classColors && typeof s.classColors === "object" ? s.classColors : {},
+  };
 }
 
 // ── Bonus / malus della spunta ⌛ ────────────────────────────────────
