@@ -624,6 +624,17 @@ function init() {
   }
 
   exportBtn.addEventListener("click", exportCSV);
+  const importBtn = document.getElementById("importBtn");
+  const importFileInput = document.getElementById("importFileInput");
+  if (importBtn && importFileInput) {
+    importBtn.addEventListener("click", () => importFileInput.click());
+    importFileInput.addEventListener("change", async () => {
+      const file = importFileInput.files[0];
+      importFileInput.value = "";
+      if (!file) return;
+      importGradesFromCSV(await file.text());
+    });
+  }
   if (testToRubricBtn && rubricView) {
     testToRubricBtn.addEventListener("click", () => {
       // Stesso test/versione già selezionati in Valutazione: la griglia
@@ -4977,6 +4988,138 @@ function exportCSV() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+/** Parser CSV minimale: virgolette, a capo nelle celle, separatore "," o ";". */
+function parseCsv(text) {
+  const clean = text.replace(/^﻿/, "");
+  const firstLine = clean.split(/\r?\n/, 1)[0];
+  const delim = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ";" : ",";
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (quoted) {
+      if (ch === '"' && clean[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === delim) { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && clean[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      rows.push(row); row = [];
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+/**
+ * Importa voti (e commenti) nella verifica/versione selezionata.
+ * Colonne: "Student" + le stesse dell'export ("Sezione" oppure
+ * "Sezione - Sottosezione"); per i commenti aggiungere "<colonna> - commento".
+ * Le celle vuote non sovrascrivono nulla. Gli studenti si riconoscono dal nome
+ * (anche con nome e cognome invertiti).
+ */
+function importGradesFromCSV(text) {
+  const selectedClass = getSelectedClass();
+  const selectedTest = getSelectedTest();
+  if (!selectedClass || !selectedTest) return;
+  ensureTestVersions(selectedTest);
+  ensureVersionSelections();
+  const version = getVersionById(selectedTest, state.selectedTestVersionId);
+  const rows = parseCsv(text);
+  if (rows.length < 2) { alert("File vuoto o senza righe di dati."); return; }
+
+  const norm = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const tokens = (s) => norm(s).replace(/\./g, " ").split(" ").filter(Boolean);
+  // Gli studenti sono salvati come "Nome C." (e id "Cognome Nome"): ogni parola
+  // del registro deve corrispondere a una parola diversa del CSV, e una
+  // semplice iniziale vale per qualsiasi parola che inizi con quella lettera.
+  const matchesStudent = (student, csvName) => {
+    const csvTokens = tokens(csvName);
+    return [student.name, student.id].some((label) => {
+      const used = new Set();
+      const own = tokens(label);
+      return own.length > 0 && own.every((tok) => {
+        const i = csvTokens.findIndex((c, k) => !used.has(k) && (tok.length === 1 ? c.startsWith(tok) : c === tok));
+        if (i < 0) return false;
+        used.add(i);
+        return true;
+      });
+    });
+  };
+
+  // Colonna -> { section, sub }. Si accetta "Sezione - Sottosezione", il solo
+  // nome della sottosezione o il solo nome della sezione (se è univoco).
+  const targets = {};
+  const addTarget = (key, target) => {
+    const k = norm(key);
+    if (k in targets && targets[k]?.sub !== target.sub) targets[k] = null; // ambiguo, ignorato
+    else if (!(k in targets)) targets[k] = target;
+  };
+  (version?.sections ?? []).forEach((section) => {
+    if (section.subsections.length > 0) {
+      section.subsections.forEach((sub) => {
+        addTarget(`${section.name} - ${sub.name}`, { section, sub });
+        addTarget(sub.name, { section, sub });
+      });
+      if (section.subsections.length === 1) addTarget(section.name, { section, sub: section.subsections[0] });
+    } else {
+      addTarget(section.name, { section, sub: null });
+    }
+  });
+
+  const headers = rows[0].map(norm);
+  const nameCol = headers.findIndex((h) => ["student", "studente", "alunno", "nome"].includes(h));
+  if (nameCol < 0) { alert('Manca la colonna "Student".'); return; }
+  const cols = [];
+  const unknown = [];
+  headers.forEach((h, idx) => {
+    if (idx === nameCol) return;
+    const isComment = /\s-\s(commento|comment)$/.test(h);
+    const base = isComment ? h.replace(/\s-\s(commento|comment)$/, "") : h;
+    if (targets[base]) cols.push({ idx, isComment, ...targets[base] });
+    else if (h && h !== "versione" && h !== "final grade") unknown.push(rows[0][idx]);
+  });
+
+  let updatedStudents = 0;
+  const notFound = [];
+  rows.slice(1).forEach((r) => {
+    const name = r[nameCol];
+    const found = selectedClass.students.filter((s) => matchesStudent(s, name));
+    const student = found.length === 1 ? found[0] : null;
+    if (!student) { if (norm(name)) notFound.push(found.length > 1 ? `${name} (ambiguo)` : name); return; }
+    let touched = false;
+    cols.forEach(({ idx, isComment, section, sub }) => {
+      const raw = String(r[idx] ?? "").trim();
+      if (raw === "") return;
+      ensureScoreStore(student, selectedTest.id, section.id);
+      const store = student.scores[selectedTest.id][section.id];
+      const key = sub ? sub.id : "direct";
+      if (isComment) {
+        if (!store.comments) store.comments = {};
+        store.comments[key] = raw;
+        touched = true;
+      } else {
+        const value = parseNumber(raw.replace(",", "."));
+        if (value === null) return;
+        if (sub) store.subsections[sub.id] = value; else store.direct = value;
+        touched = true;
+      }
+    });
+    if (touched) updatedStudents++;
+  });
+
+  saveState();
+  renderTestTable();
+  let msg = `Importati i dati di ${updatedStudents} studenti.`;
+  if (notFound.length) msg += `\nNon trovati nella classe: ${notFound.join(", ")}`;
+  if (unknown.length) msg += `\nColonne ignorate: ${unknown.join(", ")}`;
+  alert(msg);
 }
 
 function getSelectedClass() {

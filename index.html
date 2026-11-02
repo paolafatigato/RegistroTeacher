@@ -168,7 +168,9 @@
             <label for="testVersionSelect">Versione</label>
             <select id="testVersionSelect"></select>
           </div>
-          <button id="exportBtn" class="btn btn-secondary">⬇️ Export CSV</button>
+          <button id="exportBtn" class="btn btn-secondary btn-round" type="button" aria-label="Esporta CSV" data-tip="Esporta CSV">⬇️</button>
+          <button id="importBtn" class="btn btn-secondary btn-round" type="button" aria-label="Importa CSV" data-tip="Importa voti e commenti da CSV (stesse colonne dell'export; aggiungi colonne «… - commento» per i commenti)">⬆️</button>
+          <input type="file" id="importFileInput" accept=".csv,text/csv" hidden>
           <button id="testToRubricBtn" class="btn btn-secondary">📐 Griglia</button>
         </div>
       </div>

@@ -3421,3 +3421,252 @@ h1, h2, h3 {
   color: #1e90e0;
   font-weight: 700;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   RITOCCHI GRAFICI — pulsanti rotondi con tooltip + tabella compatta
+   ═══════════════════════════════════════════════════════════ */
+
+/* Pulsante solo-icona, rotondo; il testo appare al passaggio del mouse
+   (o al tocco prolungato / focus da tastiera) */
+.btn-round {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.btn-round[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translate(-50%, 4px);
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--text-dark, #242424);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 50;
+  box-shadow: 0 4px 14px rgba(36, 36, 36, 0.25);
+  transition: opacity 0.15s var(--ease), transform 0.15s var(--ease), visibility 0.15s;
+}
+
+.btn-round[data-tip]:hover::after,
+.btn-round[data-tip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* Desktop: selettori meno ingombranti e allineati ai pulsanti */
+.panel-actions {
+  gap: 10px;
+}
+
+.panel-actions select {
+  min-width: 170px;
+}
+
+.panel-actions .btn {
+  align-self: flex-end;
+}
+
+/* ── Cellulare: colonne più strette per vedere più voti ─────────────── */
+@media (max-width: 640px) {
+  .panel-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .panel-actions .field {
+    flex: 1 1 100%;
+  }
+
+  .panel-actions select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* i tooltip dei primi pulsanti non devono uscire dallo schermo */
+  .btn-round[data-tip]::after {
+    left: 0;
+    transform: translate(0, 4px);
+  }
+  .btn-round[data-tip]:hover::after,
+  .btn-round[data-tip]:focus-visible::after {
+    transform: translate(0, 0);
+  }
+
+  .container {
+    padding: 10px 4px 28px;
+  }
+
+  .panel {
+    padding: 12px 4px;
+  }
+
+  .grade-legend {
+    gap: 4px 10px;
+    font-size: 11px;
+  }
+
+  /* la tabella occupa tutta la larghezza; se le colonne non ci stanno
+     tutte alla larghezza minima, il wrapper scorre in orizzontale */
+  .grade-table {
+    min-width: 100%;
+    width: 100%;
+    font-size: 12px;
+  }
+
+  .grade-table th,
+  .grade-table td {
+    padding: 4px 1px;
+  }
+
+  .grade-table thead th {
+    padding: 4px 2px;
+    font-size: 11px;
+  }
+
+  .grade-table th.student-col,
+  .grade-table td.student-cell {
+    width: 84px;
+    min-width: 84px;
+    max-width: 84px;
+    padding-left: 4px;
+    padding-right: 2px;
+  }
+
+  .grade-table .student-cell input {
+    font-size: 12px;
+  }
+
+  .grade-table .row-select-handle {
+    width: 14px;
+    margin-right: 2px;
+    font-size: 10px;
+  }
+
+  .grade-table input {
+    min-width: 0;
+    font-size: 13px;
+    padding: 3px 0;
+  }
+
+  /* width:1px + min-width:100% → il campo riempie la cella ma non ne
+     determina la larghezza, che resta decisa dalla larghezza minima */
+  .grade-table td input.score-input {
+    width: 1px;
+    min-width: 100%;
+  }
+
+  /* niente frecce su/giù nei campi numerici: occupano spazio e coprono le cifre */
+  .grade-table input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .grade-table input[type="number"]::-webkit-outer-spin-button,
+  .grade-table input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .grade-table th input {
+    font-size: 10.5px;
+    padding: 3px 1px;
+    min-width: 0;
+  }
+
+  .section-header-cell,
+  .subheader-cell {
+    gap: 2px;
+  }
+
+  .header-menu-btn,
+  .grade-table .subheader-cell .subsection-remove {
+    width: 16px;
+    height: 16px;
+    font-size: 11px;
+  }
+
+  .subsection-category-badge {
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+  }
+
+  .add-section-col-th {
+    width: 34px;
+    min-width: 34px;
+  }
+
+  /* La larghezza delle colonne di voto segue i numeri, non le intestazioni:
+     larghezza fissa e campi di testo dell'header che non spingono la colonna */
+  .grade-table th.subheader {
+    min-width: 38px;
+    position: relative;
+  }
+
+  .grade-table th.subheader input[type="number"] {
+    font-size: 12px;
+    width: 1px;
+    min-width: 100%;
+  }
+
+  .section-header-cell input,
+  .subheader-cell input {
+    width: 0;
+    min-width: 0;
+    flex: 1 1 0;
+    text-overflow: ellipsis;
+  }
+
+  .subheader-cell .subsection-category-badge {
+    display: none;
+  }
+
+  /* niente hover sul telefono: la × compare sopra al campo solo in modifica */
+  .grade-table .subheader-cell .subsection-remove {
+    display: none;
+  }
+  .grade-table .subheader-cell:focus-within .subsection-remove {
+    display: inline-flex;
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+  }
+
+  .grade-table th.final-col,
+  .grade-table td.final-cell {
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+  }
+
+  .comment-trigger {
+    width: 12px;
+  }
+
+  .comment-trigger::after {
+    border-width: 0 8px 8px 0;
+  }
+}
