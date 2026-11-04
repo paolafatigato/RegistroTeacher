@@ -4726,10 +4726,17 @@ function saveGradingToFirebase() {
   const ops = diffGrading(previousBaseline, current);
   if (ops.length === 0) return;
 
+  // Un solo percorso non valido non deve bloccare tutti i salvataggi: lo si salta.
   const updates = {};
   ops.forEach((op) => {
-    updates[op.path.join("/")] = op.value === undefined ? null : op.value;
+    const enc = encodeGradingOp(op);
+    if (enc.path.some((seg) => typeof seg !== "string" && typeof seg !== "number" ? true : FB_ILLEGAL_KEY_CHARS.test(String(seg)) || String(seg) === "")) {
+      console.warn("Salvataggio saltato (chiave non valida per Firebase):", enc.path);
+      return;
+    }
+    updates[enc.path.join("/")] = enc.value === undefined ? null : enc.value;
   });
+  if (Object.keys(updates).length === 0) return;
 
   // Da ora in avanti il cloud conterrà questo stato (le modifiche altrui
   // arriveranno dal listener e verranno unite, non sovrascritte).
@@ -4755,6 +4762,97 @@ function saveGradingToFirebase() {
     if (fbBaseline === current) fbBaseline = previousBaseline;
     setFirebaseStatus(`❌ Errore salvataggio voti: ${err.message}`, "error");
   }
+}
+
+// ── Chiavi studente: Firebase vieta . # $ / [ ] nelle chiavi ─────────
+// Il nome completo dello studente è usato come chiave nelle mappe dei voti:
+// se contiene uno di questi caratteri il salvataggio veniva rifiutato per intero
+// e i voti restavano solo sul dispositivo (poi sovrascritti dal cloud).
+const FB_ILLEGAL_KEY_CHARS = /[.#$/\[\]]/;
+const FB_STUDENT_MAPS = ["scores", "testVersions", "facilitated", "checks", "parentConfig"];
+const FB_KEY_ESCAPES = { ".": "%2E", "#": "%23", "$": "%24", "/": "%2F", "[": "%5B", "]": "%5D" };
+
+function encodeFbKey(key) {
+  return String(key).replace(/[.#$/\[\]]/g, (c) => FB_KEY_ESCAPES[c]);
+}
+
+function decodeFbKey(key) {
+  return String(key).replace(/%(2E|23|24|2F|5B|5D)/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+function mapObjectKeys(obj, fn) {
+  const out = {};
+  Object.keys(obj || {}).forEach((k) => { out[fn(k)] = obj[k]; });
+  return out;
+}
+
+function encodeGradingOp(op) {
+  if (!FB_STUDENT_MAPS.includes(op.path[0])) return op;
+  if (op.path.length === 1) {
+    return { ...op, value: isPlainObject(op.value) ? mapObjectKeys(op.value, encodeFbKey) : op.value };
+  }
+  const path = [...op.path];
+  path[1] = encodeFbKey(path[1]);
+  return { ...op, path };
+}
+
+// ── Backup locale prima di applicare dati dal cloud ─────────────────
+
+const BACKUP_KEY = `${STORAGE_KEY}-local-backups`;
+const BACKUP_LIMIT = 8;
+
+function readBackups() {
+  try {
+    const list = JSON.parse(localStorage.getItem(BACKUP_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Conserva lo stato locale com'era PRIMA che il cloud lo sostituisca, così nulla va perso definitivamente. */
+function backupLocalGrading(localPayload) {
+  if (!localPayload || !localPayload.scores || Object.keys(localPayload.scores).length === 0) return;
+  const list = readBackups();
+  if (list.length && deepEqual(list[0].data, localPayload)) return;
+  list.unshift({ at: Date.now(), data: localPayload });
+  while (list.length > BACKUP_LIMIT) list.pop();
+  try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(list));
+  } catch (e) {
+    list.length = Math.min(list.length, 2);
+    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(list)); } catch (e2) { /* spazio esaurito */ }
+  }
+}
+
+function countScoreCells(payload) {
+  let n = 0;
+  const walk = (v) => {
+    if (typeof v === "number") n++;
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(payload && payload.scores);
+  return n;
+}
+
+function restoreLocalBackup() {
+  const list = readBackups();
+  if (list.length === 0) {
+    alert("Nessun backup locale su questo dispositivo.");
+    return;
+  }
+  const lines = list.map((b, i) =>
+    `${i + 1}) ${new Date(b.at).toLocaleString("it-IT")} — ${countScoreCells(b.data)} voti`
+  );
+  const answer = prompt(`Backup disponibili su questo dispositivo:\n\n${lines.join("\n")}\n\nScrivi il numero da ripristinare (verrà risincronizzato su tutti i dispositivi):`, "1");
+  const idx = parseInt(answer, 10) - 1;
+  if (!(idx >= 0 && idx < list.length)) return;
+  backupLocalGrading(buildGradingPayload());
+  applyFirebaseGrading(list[idx].data);
+  saveState();
+  flushGradingSave();
+  refreshAfterUndo();
+  setFirebaseStatus("🛟 Backup ripristinato");
 }
 
 // ── Sincronizzazione voti: confronto per campo ──────────────────────
@@ -4837,11 +4935,11 @@ function remoteToPayload(data) {
     tests: toTests(raw.tests),
     archivedTests: toTests(raw.archivedTests),
     settings: raw.settings,
-    scores: raw.scores,
-    testVersions: raw.testVersions,
-    facilitated: raw.facilitated,
-    checks: raw.checks,
-    parentConfig: raw.parentConfig,
+    scores: mapObjectKeys(raw.scores, decodeFbKey),
+    testVersions: mapObjectKeys(raw.testVersions, decodeFbKey),
+    facilitated: mapObjectKeys(raw.facilitated, decodeFbKey),
+    checks: mapObjectKeys(raw.checks, decodeFbKey),
+    parentConfig: mapObjectKeys(raw.parentConfig, decodeFbKey),
   });
 }
 
@@ -4962,7 +5060,10 @@ function handleGradingSnapshot(snapshot) {
   if (!first && deepEqual(remote, local)) return; // niente di nuovo (es. eco di una nostra scrittura)
   if (hasData) {
     // Cloud + le mie modifiche non ancora inviate: nessuna delle due parti va persa
-    applyFirebaseGrading(pending.length ? applyGradingOps(remote, pending) : remote);
+    const next = pending.length ? applyGradingOps(remote, pending) : remote;
+    // Prima di sostituire lo stato locale, se perde qualcosa, ne resta una copia ripristinabile
+    if (!deepEqual(next, local)) backupLocalGrading(local);
+    applyFirebaseGrading(next);
   }
   if (pending.length) scheduleGradingSave();
 }
@@ -5297,23 +5398,27 @@ function importGradesFromCSV(text) {
     });
   };
 
-  // Colonna -> { section, sub }. Si accetta "Sezione - Sottosezione", il solo
-  // nome della sottosezione o il solo nome della sezione (se è univoco).
+  // Colonna -> elenco di destinazioni { section, sub }. Si accetta "Sezione - Sottosezione",
+  // il solo nome della sottosezione o il solo nome della sezione (se è univoco).
+  // Se più sottosezioni della stessa sezione hanno lo stesso nome, l'export produce
+  // intestazioni identiche: in quel caso valgono per ordine (la 1ª colonna con quel
+  // nome è la 1ª sottosezione con quel nome, e così via).
   const targets = {};
-  const addTarget = (key, target) => {
+  const addTarget = (key, target, ordered) => {
     const k = norm(key);
-    if (k in targets && targets[k]?.sub !== target.sub) targets[k] = null; // ambiguo, ignorato
-    else if (!(k in targets)) targets[k] = target;
+    const entry = targets[k] || (targets[k] = { list: [], ordered: true });
+    if (!ordered) entry.ordered = false;
+    if (!entry.list.some((t) => t.section === target.section && t.sub === target.sub)) entry.list.push(target);
   };
   (version?.sections ?? []).forEach((section) => {
     if (section.subsections.length > 0) {
       section.subsections.forEach((sub) => {
-        addTarget(`${section.name} - ${sub.name}`, { section, sub });
-        addTarget(sub.name, { section, sub });
+        addTarget(`${section.name} - ${sub.name}`, { section, sub }, true);
+        addTarget(sub.name, { section, sub }, false);
       });
-      if (section.subsections.length === 1) addTarget(section.name, { section, sub: section.subsections[0] });
+      if (section.subsections.length === 1) addTarget(section.name, { section, sub: section.subsections[0] }, false);
     } else {
-      addTarget(section.name, { section, sub: null });
+      addTarget(section.name, { section, sub: null }, false);
     }
   });
 
@@ -5322,20 +5427,36 @@ function importGradesFromCSV(text) {
   if (nameCol < 0) { alert('Manca la colonna "Student".'); return; }
   const cols = [];
   const unknown = [];
+  const occurrences = {};
   headers.forEach((h, idx) => {
     if (idx === nameCol) return;
+    if (!h || h === "versione" || h === "final grade" || /\s-\s(total|totale)$/.test(h)) return; // calcolati: non si importano
     const isComment = /\s-\s(commento|comment)$/.test(h);
     const base = isComment ? h.replace(/\s-\s(commento|comment)$/, "") : h;
-    if (targets[base]) cols.push({ idx, isComment, ...targets[base] });
-    else if (h && h !== "versione" && h !== "final grade") unknown.push(rows[0][idx]);
+    const entry = targets[base];
+    const occ = occurrences[h] = (occurrences[h] ?? -1) + 1;
+    let target = null;
+    if (entry) {
+      if (entry.list.length === 1) target = entry.list[0];
+      else if (entry.ordered) target = entry.list[occ] ?? null;
+    }
+    if (target) cols.push({ idx, isComment, ...target });
+    else unknown.push(rows[0][idx]);
   });
 
   let updatedStudents = 0;
   const notFound = [];
+  const seenAmbiguous = {};
   rows.slice(1).forEach((r) => {
     const name = r[nameCol];
     const found = selectedClass.students.filter((s) => matchesStudent(s, name));
-    const student = found.length === 1 ? found[0] : null;
+    let student = found.length === 1 ? found[0] : null;
+    if (found.length > 1) {
+      // Compagni con lo stesso nome (es. due "Leonardo F."): si assegnano per ordine di riga
+      const groupKey = found.map((s) => s.id).join("|");
+      const n = seenAmbiguous[groupKey] = (seenAmbiguous[groupKey] ?? -1) + 1;
+      student = found[n] ?? null;
+    }
     if (!student) { if (norm(name)) notFound.push(found.length > 1 ? `${name} (ambiguo)` : name); return; }
     let touched = false;
     cols.forEach(({ idx, isComment, section, sub }) => {
