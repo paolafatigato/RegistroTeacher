@@ -2498,7 +2498,8 @@ function renderTestTable() {
             section.id,
             subsection.id,
             "subsection",
-            shouldDisable
+            shouldDisable,
+            getSubsectionMax(section, subsection, getSectionTotals(section).fallbackPerSubMax)
           );
           cell.appendChild(input);
           attachCommentTrigger(cell, student, selectedTest.id, section.id, subsection.id);
@@ -2531,7 +2532,8 @@ function renderTestTable() {
           section.id,
           null,
           "section",
-          shouldDisable
+          shouldDisable,
+          getSectionMax(section)
         );
         cell.appendChild(input);
         attachCommentTrigger(cell, student, selectedTest.id, section.id, null);
@@ -2721,7 +2723,8 @@ function createScoreInput(
   sectionId,
   subsectionId,
   type,
-  isDisabled = false
+  isDisabled = false,
+  maxValue = null
 ) {
   ensureScoreStore(student, testId, sectionId);
   const input = document.createElement("input");
@@ -2736,6 +2739,24 @@ function createScoreInput(
     input.value = value ?? "";
   } else {
     input.value = student.scores[testId][sectionId].direct ?? "";
+  }
+
+  // Al click su una cella vuota compare in grigio chiaro il voto massimo
+  // della colonna; il doppio click lo inserisce.
+  if (maxValue != null && !input.disabled) {
+    const maxText = String(formatScore(maxValue));
+    input.addEventListener("focus", () => {
+      if (input.value === "") input.placeholder = maxText;
+    });
+    input.addEventListener("blur", () => {
+      input.placeholder = "";
+    });
+    input.addEventListener("dblclick", () => {
+      if (input.value !== "") return;
+      input.value = maxText;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.select();
+    });
   }
 
   input.addEventListener("blur", (event) => {
@@ -4574,6 +4595,7 @@ function buildUndoSnapshot(dataToSave) {
 
 function saveState() {
   // Salva preferenze UI e cache voti in localStorage (fallback offline)
+  const knownMaps = buildKnownStudentMaps();
   const dataToSave = {
     tests: state.tests,
     settings: state.settings,
@@ -4582,11 +4604,11 @@ function saveState() {
     selectedTestVersionId: state.selectedTestVersionId,
     selectedConfigVersionId: state.selectedConfigVersionId,
     view: state.view,
-    studentScores: buildStudentScoresMap(),
-    studentTestVersions: buildStudentTestVersionsMap(),
-    studentFacilitated: buildStudentFacilitatedMap(),
-    studentChecks: buildStudentChecksMap(),
-    studentParentConfig: buildStudentParentConfigMap(),
+    studentScores: knownMaps.scores,
+    studentTestVersions: knownMaps.testVersions,
+    studentFacilitated: knownMaps.facilitated,
+    studentChecks: knownMaps.checks,
+    studentParentConfig: knownMaps.parentConfig,
   };
 
   // Registra lo stato COM'ERA prima di questa modifica, per Ctrl+Z. Non lo
@@ -4904,10 +4926,12 @@ function firebaseToArray(v) {
   return [];
 }
 
-/** Stato locale dei voti nella stessa forma in cui sta su Firebase. */
-function buildGradingPayload() {
-  // Gli studenti non presenti nelle classi caricate (o classi non ancora caricate)
-  // mantengono i voti già noti: non vanno scambiati per voti cancellati.
+/**
+ * Mappe dei dati per studente. Gli studenti non presenti nelle classi caricate
+ * (o classi non ancora caricate, es. subito dopo l'apertura) mantengono i voti già noti:
+ * non vanno scambiati per voti cancellati, né nella cache locale né verso il cloud.
+ */
+function buildKnownStudentMaps() {
   const presentIds = new Set();
   state.classes.forEach((cls) => cls.students.forEach((s) => presentIds.add(s.id)));
   const withKnown = (known, built) => {
@@ -4915,15 +4939,22 @@ function buildGradingPayload() {
     presentIds.forEach((id) => delete map[id]);
     return Object.assign(map, built);
   };
-  return canonGrading({
-    tests: state.tests,
-    archivedTests: state.archivedTests || [],
-    settings: state.settings,
+  return {
     scores: withKnown(state._studentScores, buildStudentScoresMap()),
     testVersions: withKnown(state._studentTestVersions, buildStudentTestVersionsMap()),
     facilitated: withKnown(state._studentFacilitated, buildStudentFacilitatedMap()),
     checks: withKnown(state._studentChecks, buildStudentChecksMap()),
     parentConfig: withKnown(state._studentParentConfig, buildStudentParentConfigMap()),
+  };
+}
+
+/** Stato locale dei voti nella stessa forma in cui sta su Firebase. */
+function buildGradingPayload() {
+  return canonGrading({
+    tests: state.tests,
+    archivedTests: state.archivedTests || [],
+    settings: state.settings,
+    ...buildKnownStudentMaps(),
   });
 }
 
@@ -5051,7 +5082,11 @@ function handleGradingSnapshot(snapshot) {
     // Cloud ancora senza verifiche: la cache locale è l'unica fonte, va inviata
     if (!hasData || (!base && !(remote.tests && remote.tests.length))) base = {};
   }
-  const pending = base ? diffGrading(base, local) : [];
+  // All'apertura la cache locale può essere incompleta (le classi non erano ancora
+  // caricate): una mancanza non vale come cancellazione, vince il cloud.
+  const pending = base
+    ? diffGrading(base, local).filter((op) => !first || op.value !== undefined)
+    : [];
 
   fbBaseline = remote;
   fbGradingLoaded = true;

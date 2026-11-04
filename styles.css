@@ -3670,3 +3670,9 @@ h1, h2, h3 {
     border-width: 0 8px 8px 0;
   }
 }
+
+/* Voto massimo suggerito (doppio click per inserirlo) */
+.grade-table td input.score-input::placeholder {
+  color: #c4c4c4;
+  opacity: 1;
+}
